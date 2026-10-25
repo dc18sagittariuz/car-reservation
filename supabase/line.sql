@@ -25,6 +25,11 @@ create table if not exists public.line_settings (
   updated_at                timestamptz not null default now()
 );
 insert into public.line_settings (id) values (1) on conflict (id) do nothing;
+-- คอลัมน์ที่เพิ่มภายหลัง
+alter table public.line_settings add column if not exists weekly_enabled boolean not null default true;
+alter table public.line_settings add column if not exists weekly_hour    int not null default 16;
+alter table public.line_settings add column if not exists driver_token   text not null default replace(gen_random_uuid()::text, '-', '');
+alter table public.line_settings add column if not exists site_url       text not null default 'https://dc18sagittariuz.github.io/car-reservation/';
 
 -- ---------- คิวข้อความรอส่ง ----------
 create table if not exists public.line_outbox (
@@ -109,6 +114,50 @@ returns text language sql stable security definer set search_path = public as $$
   select public.line_daily_text((now() at time zone 'Asia/Bangkok')::date + p_offset)
 $$;
 
+-- สรุปงานรายสัปดาห์ (จันทร์–อาทิตย์) แบบกระชับ
+create or replace function public.line_week_text(d_from date, p_title text default 'งานขับรถสัปดาห์')
+returns text language plpgsql stable security definer set search_path = public as $$
+declare
+  ds timestamptz := (d_from::timestamp at time zone 'Asia/Bangkok');
+  de timestamptz := ((d_from + 7)::timestamp at time zone 'Asia/Bangkok');
+  r record; cur date; n int := 0; nodrv int := 0; body text := ''; day_d date;
+begin
+  for r in
+    select b.*, v.name as vname, v.plate as vplate, d.name as dname
+      from public.bookings b
+      left join public.vehicles v on v.id = b.vehicle_id
+      left join public.drivers  d on d.id = b.driver_id
+     where b.status = 'approved' and b.start_at < de and b.end_at > ds
+     order by b.start_at
+  loop
+    n := n + 1;
+    if r.driver_id is null then nodrv := nodrv + 1; end if;
+    day_d := greatest((r.start_at at time zone 'Asia/Bangkok')::date, d_from);
+    if cur is distinct from day_d then
+      cur := day_d;
+      body := body || E'\n\n▪️ ' || line_thdate(day_d::timestamp at time zone 'Asia/Bangkok');
+    end if;
+    body := body || E'\n' || to_char(r.start_at at time zone 'Asia/Bangkok','HH24:MI') || '–'
+      || case when (r.end_at at time zone 'Asia/Bangkok')::date = (r.start_at at time zone 'Asia/Bangkok')::date
+              then to_char(r.end_at at time zone 'Asia/Bangkok','HH24:MI')
+              else line_thdate(r.end_at) || ' ' || to_char(r.end_at at time zone 'Asia/Bangkok','HH24:MI') end
+      || ' ' || coalesce(nullif(r.vplate,''), r.vname, 'รถ')
+      || E'\n   👤 ' || coalesce(r.dname, 'ยังไม่จัดคนขับ') || ' · 📍 ' || r.destination || ' · 🙋 ' || r.requester;
+  end loop;
+  return '🗓️ ' || p_title || E'\n' || line_thdate(ds) || ' – ' || line_thdate(de - interval '1 second')
+    || ' ' || (extract(year from d_from)::int + 543)
+    || E'\n' || case when n = 0 then 'ไม่มีงาน'
+                     else 'รวม ' || n || ' งาน' || case when nodrv > 0 then ' (ยังไม่จัดคนขับ ' || nodrv || ' งาน)' else '' end || body end;
+end $$;
+
+-- p_weeks = 0 สัปดาห์นี้, 1 สัปดาห์หน้า
+create or replace function public.line_week_text_rel(p_weeks int)
+returns text language sql stable security definer set search_path = public as $$
+  select public.line_week_text(
+    date_trunc('week', (now() at time zone 'Asia/Bangkok'))::date + 7 * p_weeks,
+    case when p_weeks = 0 then 'งานขับรถสัปดาห์นี้' else 'งานขับรถสัปดาห์หน้า' end)
+$$;
+
 -- ---------- ส่งข้อความเข้าคิว / ปลุก Edge Function ----------
 create or replace function public.line_kick()
 returns void language plpgsql security definer set search_path = public, extensions as $$
@@ -139,6 +188,27 @@ begin
   if (select daily_enabled from public.line_settings where id = 1) then
     perform public.line_enqueue('drivers', public.line_daily_text_rel(1));
   end if;
+end $$;
+
+-- สรุปงานสัปดาห์หน้า (เรียกโดย pg_cron ทุกวันศุกร์)
+create or replace function public.line_enqueue_weekly()
+returns void language plpgsql security definer set search_path = public as $$
+begin
+  if (select weekly_enabled from public.line_settings where id = 1) then
+    perform public.line_enqueue('drivers', public.line_week_text_rel(1));
+  end if;
+end $$;
+
+-- ตั้งเวลา cron ใหม่ตามค่าที่ตั้งไว้ (pg_cron ใช้เวลา UTC, ไทย = UTC+7)
+create or replace function public.line_reschedule()
+returns void language plpgsql security definer set search_path = public as $$
+declare s public.line_settings;
+begin
+  select * into s from public.line_settings where id = 1;
+  perform cron.schedule('line-daily', format('0 %s * * *', (s.daily_hour - 7 + 24) % 24), 'select public.line_enqueue_daily()');
+  -- วันศุกร์ (5) ตามเวลาไทย ถ้าก่อน 07:00 น. จะตรงกับวันพฤหัสบดี (4) ในเวลา UTC
+  perform cron.schedule('line-weekly', format('0 %s * * %s', (s.weekly_hour - 7 + 24) % 24, case when s.weekly_hour < 7 then 4 else 5 end),
+                        'select public.line_enqueue_weekly()');
 end $$;
 
 -- ส่งซ้ำข้อความที่ค้าง/ล้มเหลว (เรียกโดย pg_cron ทุก 15 นาที)
@@ -209,18 +279,87 @@ begin
   else update public.line_settings set admin_target = null, admin_name = null where id = 1; end if;
 end $$;
 
+drop function if exists public.line_save_settings(boolean,int,boolean,boolean,boolean);
 create or replace function public.line_save_settings(
-  p_daily_enabled boolean, p_daily_hour int, p_notify_changes boolean,
-  p_notify_cancel_admin boolean, p_notify_new_request_admin boolean)
+  p_daily_enabled boolean, p_daily_hour int, p_weekly_enabled boolean, p_weekly_hour int,
+  p_notify_changes boolean, p_notify_cancel_admin boolean, p_notify_new_request_admin boolean)
 returns void language plpgsql security definer set search_path = public as $$
 begin
   if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
   update public.line_settings set daily_enabled = p_daily_enabled, daily_hour = p_daily_hour,
+    weekly_enabled = p_weekly_enabled, weekly_hour = p_weekly_hour,
     notify_changes = p_notify_changes, notify_cancel_admin = p_notify_cancel_admin,
     notify_new_request_admin = p_notify_new_request_admin, updated_at = now()
    where id = 1;
-  -- pg_cron ใช้เวลา UTC (ไทย = UTC+7)
-  perform cron.schedule('line-daily', format('0 %s * * *', (p_daily_hour - 7 + 24) % 24), 'select public.line_enqueue_daily()');
+  perform public.line_reschedule();
+end $$;
+
+-- สถิติการส่งเดือนนี้ (ใช้ประมาณโควตา)
+create or replace function public.line_month_stats()
+returns json language sql stable security definer set search_path = public as $$
+  select case when public.is_superadmin() then json_build_object(
+    'drivers_sent', count(*) filter (where audience = 'drivers' and status = 'sent'),
+    'admins_sent',  count(*) filter (where audience = 'admins'  and status = 'sent'),
+    'failed',       count(*) filter (where status = 'failed'),
+    'month_start',  date_trunc('month', now() at time zone 'Asia/Bangkok'))
+  else null end
+  from public.line_outbox
+  where sent_at >= (date_trunc('month', now() at time zone 'Asia/Bangkok') at time zone 'Asia/Bangkok')
+     or (status = 'failed' and created_at >= (date_trunc('month', now() at time zone 'Asia/Bangkok') at time zone 'Asia/Bangkok'))
+$$;
+
+-- ดูตัวอย่างข้อความก่อนส่ง (Super Admin)
+create or replace function public.line_preview(p_what text)
+returns text language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
+  return case p_what
+    when 'today'    then public.line_daily_text_rel(0)
+    when 'tomorrow' then public.line_daily_text_rel(1)
+    when 'thisweek' then public.line_week_text_rel(0)
+    when 'nextweek' then public.line_week_text_rel(1) end;
+end $$;
+
+-- ---------- ปฏิทินสำหรับพนักงานขับรถ (เปิดด้วยลิงก์ที่มีรหัส ไม่ต้องล็อกอิน) ----------
+create or replace function public.driver_view(p_token text, p_from date, p_to date)
+returns json language plpgsql stable security definer set search_path = public as $$
+declare ds timestamptz; de timestamptz;
+begin
+  if p_token is null or not exists (select 1 from public.line_settings where id = 1 and driver_token = p_token) then
+    raise exception 'invalid_token';
+  end if;
+  if p_to < p_from or p_to - p_from > 62 then raise exception 'ช่วงวันที่ไม่ถูกต้อง'; end if;
+  ds := p_from::timestamp at time zone 'Asia/Bangkok';
+  de := (p_to + 1)::timestamp at time zone 'Asia/Bangkok';
+  return json_build_object(
+    'drivers', coalesce((select json_agg(json_build_object('id', id, 'name', name, 'phone', phone) order by name)
+                           from public.drivers where active), '[]'::json),
+    'jobs', coalesce((select json_agg(json_build_object(
+        'id', b.id, 'start_at', b.start_at, 'end_at', b.end_at,
+        'kind', v.kind, 'vehicle', v.name, 'plate', v.plate,
+        'driver_id', b.driver_id, 'driver', d.name, 'driver_phone', d.phone,
+        'requester', b.requester, 'dept', b.dept, 'phone', b.phone,
+        'destination', b.destination, 'purpose', b.purpose, 'note', b.note, 'passengers', b.passengers)
+        order by b.start_at)
+      from public.bookings b
+      left join public.vehicles v on v.id = b.vehicle_id
+      left join public.drivers  d on d.id = b.driver_id
+      where b.status = 'approved' and b.start_at < de and b.end_at > ds), '[]'::json));
+end $$;
+
+-- ลิงก์ปฏิทินคนขับ (Admin ขึ้นไปดูได้) / สร้างลิงก์ใหม่ (Super Admin)
+create or replace function public.driver_link()
+returns text language plpgsql stable security definer set search_path = public as $$
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  return (select site_url || 'driver.html?k=' || driver_token from public.line_settings where id = 1);
+end $$;
+create or replace function public.driver_link_reset()
+returns text language plpgsql security definer set search_path = public as $$
+begin
+  if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
+  update public.line_settings set driver_token = replace(gen_random_uuid()::text, '-', ''), updated_at = now() where id = 1;
+  return public.driver_link();
 end $$;
 
 create or replace function public.line_send_now(p_what text)
@@ -229,6 +368,8 @@ begin
   if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
   if p_what = 'today'    then perform public.line_enqueue('drivers', public.line_daily_text_rel(0)); end if;
   if p_what = 'tomorrow' then perform public.line_enqueue('drivers', public.line_daily_text_rel(1)); end if;
+  if p_what = 'thisweek' then perform public.line_enqueue('drivers', public.line_week_text_rel(0)); end if;
+  if p_what = 'nextweek' then perform public.line_enqueue('drivers', public.line_week_text_rel(1)); end if;
   if p_what = 'test' then
     perform public.line_enqueue('drivers', '✅ ทดสอบการเชื่อมต่อ: กลุ่มนี้จะได้รับแจ้งงานขับรถจากระบบจองรถ');
     perform public.line_enqueue('admins',  '✅ ทดสอบการเชื่อมต่อ: แชทนี้จะได้รับแจ้งเตือนสำหรับผู้ดูแลระบบจองรถ');
@@ -294,14 +435,23 @@ revoke all on function public.line_kick()                            from public
 grant execute on function public.line_claim_outbox()                 to service_role;
 grant execute on function public.line_pair(text,text,text,text)      to service_role;
 grant execute on function public.line_daily_text_rel(int)            to service_role;
+revoke all on function public.line_week_text_rel(int)                from public, anon, authenticated;
+revoke all on function public.line_week_text(date,text)              from public, anon, authenticated;
+revoke all on function public.line_enqueue_weekly()                  from public, anon, authenticated;
+revoke all on function public.line_reschedule()                      from public, anon, authenticated;
+grant execute on function public.line_week_text_rel(int)             to service_role;
+grant execute on function public.line_month_stats()                  to authenticated;
+grant execute on function public.line_preview(text)                  to authenticated;
+grant execute on function public.driver_view(text,date,date)         to anon, authenticated;
+grant execute on function public.driver_link()                       to authenticated;
+grant execute on function public.driver_link_reset()                 to authenticated;
 grant execute on function public.line_new_pair_code()                to authenticated;
 grant execute on function public.line_unlink(text)                   to authenticated;
-grant execute on function public.line_save_settings(boolean,int,boolean,boolean,boolean) to authenticated;
+grant execute on function public.line_save_settings(boolean,int,boolean,int,boolean,boolean,boolean) to authenticated;
 grant execute on function public.line_send_now(text)                 to authenticated;
 
 -- ---------- งานตั้งเวลา (pg_cron ใช้เวลา UTC) ----------
-select cron.schedule('line-daily', format('0 %s * * *', ((select daily_hour from public.line_settings where id = 1) - 7 + 24) % 24),
-                     'select public.line_enqueue_daily()');
+select public.line_reschedule();
 select cron.schedule('line-retry', '*/15 * * * *', 'select public.line_retry()');
 
 -- ---------- Realtime ----------

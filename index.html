@@ -233,6 +233,7 @@
 
     <section class="view" id="v-drivers" hidden>
       <div class="pagehead"><div><h2>พนักงานขับรถ</h2><p>รายชื่อที่ใช้จัดลงงาน</p></div></div>
+      <div class="panel" style="margin-bottom:20px"><div class="panel-head"><h3>ปฏิทินงานสำหรับพนักงานขับรถ</h3></div><div id="drvLink"></div></div>
       <div class="two">
         <div class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>ชื่อ</th><th>เบอร์โทร</th><th>LINE</th><th style="text-align:right">งานที่จะถึง</th><th></th></tr></thead><tbody id="driverRows"></tbody></table></div></div>
         <div class="panel"><div class="panel-head"><h2>เพิ่มพนักงานขับรถ</h2></div>
@@ -248,6 +249,7 @@
     <section class="view" id="v-line" hidden>
       <div class="pagehead"><div><h2>แจ้งงานกลุ่ม LINE</h2><p>บอทส่งงานให้พนักงานขับรถล่วงหน้า และแจ้งเตือนผู้ดูแลอัตโนมัติ</p></div></div>
       <div class="notice" id="lineNotice" hidden></div>
+      <div class="kpis" id="lineKpis"></div>
       <div class="two">
         <div class="col">
           <div class="panel">
@@ -258,9 +260,17 @@
             <div class="small muted" id="lineQuota" style="margin-top:12px"></div>
           </div>
           <div class="panel">
+            <div class="panel-head"><h3>ปฏิทินคนขับ &amp; เมนูใน LINE</h3></div>
+            <div id="lineDrvLink"></div>
+            <div class="conn-row" style="margin-top:12px"><div style="min-width:0"><b>Rich menu</b><span class="small" id="rmState">เมนูปุ่มลัดในแชทส่วนตัวกับบอท: งานวันนี้ · พรุ่งนี้ · สัปดาห์นี้ · สัปดาห์หน้า · ปฏิทิน</span></div>
+              <button class="btn sm primary" id="rmSetup">ติดตั้งเมนู</button></div>
+            <p class="small muted" style="margin:10px 0 0">Rich menu แสดงเฉพาะในแชทส่วนตัวกับบอท (LINE ไม่แสดงในกลุ่ม) พนักงานขับรถต้องเพิ่มบอทเป็นเพื่อน และต้องอยู่ในกลุ่มคนขับ จึงจะกดดูงานได้</p>
+          </div>
+          <div class="panel">
             <div class="panel-head"><h3>การแจ้งเตือนอัตโนมัติ</h3></div>
             <form id="lineForm">
               <label class="chk"><input type="checkbox" id="ls-daily"><span>ส่งสรุปงานพรุ่งนี้เข้ากลุ่มคนขับทุกวัน เวลา <select id="ls-hour" aria-label="เวลาส่งสรุป"></select> น.</span></label>
+              <label class="chk"><input type="checkbox" id="ls-weekly"><span>ส่งสรุปงานสัปดาห์หน้าเข้ากลุ่มคนขับทุกวันศุกร์ เวลา <select id="ls-whour" aria-label="เวลาส่งสรุปรายสัปดาห์"></select> น.</span></label>
               <label class="chk"><input type="checkbox" id="ls-changes"><span>แจ้งกลุ่มคนขับทันที เมื่องานของวันนี้หรือพรุ่งนี้ (ที่ส่งสรุปไปแล้ว) มีงานใหม่ เปลี่ยนคนขับ หรือถูกยกเลิก</span></label>
               <label class="chk"><input type="checkbox" id="ls-cancel"><span>แจ้งผู้ดูแลเมื่อผู้จองยกเลิกการจองที่อนุมัติแล้ว</span></label>
               <label class="chk"><input type="checkbox" id="ls-new"><span>แจ้งผู้ดูแลเมื่อมีคำขอจองใหม่</span></label>
@@ -270,7 +280,7 @@
         </div>
         <div class="col">
           <div class="panel">
-            <div class="panel-head"><h3>สรุปงาน</h3><select id="lineDay" style="width:auto" aria-label="ช่วงวัน"><option value="1">งานพรุ่งนี้</option><option value="0">งานวันนี้</option><option value="7">งาน 7 วันข้างหน้า</option></select></div>
+            <div class="panel-head"><h3>สรุปงาน</h3><select id="lineDay" style="width:auto" aria-label="ช่วงวัน"><option value="tomorrow">งานพรุ่งนี้</option><option value="today">งานวันนี้</option><option value="thisweek">งานสัปดาห์นี้</option><option value="nextweek">งานสัปดาห์หน้า</option></select></div>
             <pre class="msg" id="lineMsg"></pre>
             <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center">
               <button class="btn primary" id="sendNow">ส่งเข้ากลุ่มคนขับตอนนี้</button>

@@ -240,6 +240,22 @@ async function loadLine(){
   }
   const o = await sb.from('line_outbox').select('id,audience,body,status,error,created_at,sent_at').order('id',{ascending:false}).limit(20);
   if(!o.error) S.line.outbox=o.data||[];
+  const st = await sb.rpc('line_month_stats'); if(!st.error) S.line.stats=st.data;
+  if(S.view==='line') loadPreview();
+}
+async function loadDriverLink(){
+  if(!S.isAdmin) return;
+  const { data, error } = await sb.rpc('driver_link');
+  S.driverLink = error ? null : data;
+}
+let previewT;
+function loadPreview(){
+  clearTimeout(previewT);
+  previewT=setTimeout(async()=>{
+    if(!S.isSuper || S.line.missing) return;
+    const { data, error } = await sb.rpc('line_preview',{p_what:$('lineDay').value});
+    $('lineMsg').textContent = error ? 'ดูตัวอย่างไม่ได้: '+errText(error) : (data||'');
+  },150);
 }
 async function lineStatus(){
   if(!S.isSuper || S.line.missing) return;
@@ -258,7 +274,7 @@ async function loadProfiles(){
   S.profiles=data||[];
 }
 async function loadAll(){
-  const errs=(await Promise.all([loadVehicles(),loadDrivers(),loadBookings(),loadProfiles(),loadNotifs(),loadLine()])).filter(Boolean);
+  const errs=(await Promise.all([loadVehicles(),loadDrivers(),loadBookings(),loadProfiles(),loadNotifs(),loadLine(),loadDriverLink()])).filter(Boolean);
   const off=$('offline');
   if(errs.length){
     off.hidden=false;
@@ -315,7 +331,7 @@ function go(v){
   try{ history.replaceState(null,'','#'+v); }catch(e){}
   const nb=document.querySelector(`.navbtn[data-v="${v}"]`); if(nb && innerWidth<900) nb.scrollIntoView({block:'nearest',inline:'center'});
   window.scrollTo({top:0});
-  if(v==='line' && S.isSuper){ S.line.dirty=false; renderLineAdmin(); lineStatus(); }
+  if(v==='line' && S.isSuper){ S.line.dirty=false; renderLineAdmin(); lineStatus(); loadPreview(); }
 }
 $('nav').onclick=e=>{ const b=e.target.closest('.navbtn'); if(b) go(b.dataset.v); };
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
@@ -640,7 +656,7 @@ function renderAdmin(){
     if(S.pwShown[p.id]) pw += `<div class="pw-new">รหัสใหม่: <code>${esc(S.pwShown[p.id])}</code> <button class="btn sm" data-act="copytext" data-text="${esc(S.pwShown[p.id])}">คัดลอก</button><span class="small muted"> แจ้งผู้ใช้ แล้วให้เปลี่ยนเองภายหลัง</span></div>`;
     return `<tr><td>${esc(p.full_name)||'—'}</td><td>${esc(p.dept)||'—'}</td><td>${esc(p.email)}</td><td>${roleCell}</td><td>${pw}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="muted">ยังไม่มีผู้ใช้</td></tr>';
-  renderLine(); renderNotifs(); renderLineAdmin();
+  renderLine(); renderNotifs(); renderLineAdmin(); renderDriverLink('drvLink', false);
 }
 function renderNotifs(){
   if(!S.isAdmin) return;
@@ -688,22 +704,36 @@ function renderLineAdmin(){
       <div class="cmd"><span class="small">ในแชทส่วนตัวกับบอท พิมพ์</span><code>${c2}</code><button class="btn sm" data-act="copytext" data-text="${c2}">คัดลอก</button></div>`;
   } else { pair.hidden=true; pair.innerHTML=''; }
 
-  let q='';
-  if(st.consumption){
-    const used=st.consumption.totalUsage, lim=st.quota&&st.quota.type==='limited'?st.quota.value:null;
-    q+=`โควตาข้อความเดือนนี้: ใช้ไป ${used}${lim!=null?' / '+lim:''} ข้อความ (ข้อความตอบคำสั่ง /งานวันนี้ ไม่นับ)`;
-  }
-  if(st.driversMembers) q+=`${q?' · ':''}กลุ่มคนขับมี ${st.driversMembers} คน ส่ง 1 ครั้งนับเป็น ${st.driversMembers} ข้อความ`;
-  $('lineQuota').textContent=q;
+  // ---- โควตาข้อความ ----
+  const stats=L.stats||{}, members=st.driversMembers||0;
+  const lim = st.quota ? (st.quota.type==='limited' ? st.quota.value : null) : 300;
+  const fromLine = st.consumption && typeof st.consumption.totalUsage==='number';
+  const used = fromLine ? st.consumption.totalUsage : (stats.drivers_sent||0)*(members||1)+(stats.admins_sent||0);
+  const now=new Date(), dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate(), dom=now.getDate();
+  const proj = Math.round(used/dom*dim);
+  const pct = lim ? Math.min(100, used/lim*100) : 0;
+  const lvl = lim && used>=lim ? 'bad' : lim && (used/lim>=.8 || proj>lim) ? 'warn' : '';
+  $('lineKpis').innerHTML = [
+    `<div class="kpi ${lvl==='bad'?'bad':lvl==='warn'?'attn':''}"><b>${used}${lim?`<span style="font-size:1rem;color:var(--muted)"> / ${lim}</span>`:''}</b><span>ข้อความที่ใช้ไปเดือนนี้</span>
+      ${lim?`<div class="meter ${lvl}"><i style="width:${pct}%"></i></div>`:''}<small>${fromLine?'ตัวเลขจาก LINE (อาจช้าไม่กี่นาที)':'ประมาณจากประวัติการส่ง'}</small></div>`,
+    `<div class="kpi ${lvl==='bad'?'bad':''}"><b>${lim?Math.max(0,lim-used):'∞'}</b><span>เหลือใช้ได้เดือนนี้</span><small>${lim?'โควตาฟรีรีเซ็ตวันที่ 1 ของเดือน':'แพ็กเกจไม่จำกัดจำนวน'}</small></div>`,
+    `<div class="kpi ${lim&&proj>lim?'attn':''}"><b>~${proj}</b><span>คาดการณ์ถึงสิ้นเดือน</span><small>${lim&&proj>lim?'อาจเกินโควตา ลองปิดการแจ้งทันที':'จากอัตราการใช้ ${dom} วันที่ผ่านมา'.replace('${dom}',dom)}</small></div>`,
+    `<div class="kpi"><b>${(stats.drivers_sent||0)+(stats.admins_sent||0)}</b><span>ครั้งที่ระบบส่งเดือนนี้</span><small>กลุ่มคนขับ ${stats.drivers_sent||0} ครั้ง${members?` × ${members} คน`:''} · ผู้ดูแล ${stats.admins_sent||0} ครั้ง</small></div>`
+  ].join('');
+  $('lineQuota').textContent = members ? `กลุ่มคนขับมี ${members} คน ส่งเข้ากลุ่ม 1 ครั้งนับเป็น ${members} ข้อความ · ข้อความที่บอทตอบคำสั่ง (/งานวันนี้ ฯลฯ) ไม่นับโควตา` : '';
+  $('rmState').innerHTML = st.richMenuId ? '<span class="conn-ok">✅ ติดตั้งเมนูแล้ว</span> · กดติดตั้งซ้ำเพื่ออัปเดต' : 'เมนูปุ่มลัดในแชทส่วนตัวกับบอท: งานวันนี้ · พรุ่งนี้ · สัปดาห์นี้ · สัปดาห์หน้า · ปฏิทิน';
+  renderDriverLink('lineDrvLink', true);
 
   if(cfg && !L.dirty){
-    if(!$('ls-hour').options.length) $('ls-hour').innerHTML=Array.from({length:24},(_,h)=>`<option value="${h}">${pad(h)}:00</option>`).join('');
+    const hrs=Array.from({length:24},(_,h)=>`<option value="${h}">${pad(h)}:00</option>`).join('');
+    if(!$('ls-hour').options.length) $('ls-hour').innerHTML=hrs;
+    if(!$('ls-whour').options.length) $('ls-whour').innerHTML=hrs;
     $('ls-daily').checked=cfg.daily_enabled; $('ls-hour').value=String(cfg.daily_hour);
+    $('ls-weekly').checked=cfg.weekly_enabled!==false; $('ls-whour').value=String(cfg.weekly_hour??16);
     $('ls-changes').checked=cfg.notify_changes; $('ls-cancel').checked=cfg.notify_cancel_admin; $('ls-new').checked=cfg.notify_new_request_admin;
   }
   const dis = L.missing || !cfg;
-  ['lineCode','sendNow','sendTest'].forEach(id=>$(id).disabled=dis);
-  if($('lineDay').value==='7') $('sendNow').disabled=true;
+  ['lineCode','sendNow','sendTest','rmSetup'].forEach(id=>$(id).disabled=dis);
 
   $('lineLog').innerHTML = L.outbox.length ? L.outbox.map(o=>{
     const t=new Date(o.created_at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
@@ -719,18 +749,32 @@ function jobText(b,i){
    ไปที่: ${b.destination}
    ภารกิจ: ${b.purpose}${b.note?' – '+b.note:''} · ${b.passengers} คน`;
 }
-function renderLine(){
-  const days=+$('lineDay').value, base=addDays(new Date(),days===1?1:0);
-  const from=ymd(base), to=ymd(addDays(base,days===7?7:0));
-  const jobs=S.bookings.filter(b=>b.status==='approved'&&b.start.slice(0,10)<=to&&b.end.slice(0,10)>=from).sort((a,b)=>a.start<b.start?-1:1);
-  const head=days===7?`📋 งานขับรถ ${thDate(from,{day:'numeric',month:'short'})} – ${thDate(to,{day:'numeric',month:'short',year:'2-digit'})}`
-    :`📋 งานขับรถ${days===1?'พรุ่งนี้':'วันนี้'} ${thDate(from,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}`;
-  $('lineMsg').textContent=head+'\n\n'+(jobs.length?jobs.map(jobText).join('\n\n'):'ไม่มีงาน')+'\n\nหากติดขัดแจ้งผู้ดูแลระบบได้ทันที';
+function renderLine(){ if(S.view==='line') loadPreview(); }
+function renderDriverLink(id, canReset){
+  const el=$(id); if(!el) return;
+  if(!S.driverLink){ el.innerHTML='<div class="small muted">ยังใช้ไม่ได้ ต้องรันไฟล์ supabase/line.sql เวอร์ชันล่าสุดก่อน</div>'; return; }
+  el.innerHTML=`<p class="small muted" style="margin:0 0 8px">ลิงก์เปิดดูตารางงานในมือถือ ไม่ต้องล็อกอิน ส่งให้เฉพาะพนักงานขับรถ (หรือให้กด "ปฏิทินงาน" ในเมนู LINE)</p>
+    <div class="linkbox"><code>${esc(S.driverLink)}</code><button class="btn sm" data-act="copytext" data-text="${esc(S.driverLink)}">คัดลอก</button>
+    <a class="btn sm" href="${esc(S.driverLink)}" target="_blank" rel="noopener">เปิดดู</a>
+    ${canReset&&S.isSuper?`<button class="btn sm danger" data-act="drvlinkreset">${S.confirmDel==='drvlink'?'ยืนยัน (ลิงก์เก่าจะใช้ไม่ได้)':'สร้างลิงก์ใหม่'}</button>`:''}</div>`;
 }
-$('lineDay').onchange=()=>{ renderLine(); renderLineAdmin(); };
+$('lineDay').onchange=()=>loadPreview();
+$('rmSetup').onclick=async()=>{
+  $('rmSetup').disabled=true; toast('กำลังติดตั้งเมนู…');
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    const r = await fetch(CFG.SUPABASE_URL+'/functions/v1/line-bot', { method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':CFG.SUPABASE_KEY, 'Authorization':'Bearer '+(session?session.access_token:'') },
+      body: JSON.stringify({action:'richmenu'}) });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok || d.error) toast('ติดตั้งไม่สำเร็จ: '+(d.error||r.status)); else { toast('ติดตั้งเมนูแล้ว เปิดแชทกับบอทเพื่อดู'); lineStatus(); }
+  }catch(e){ toast('เรียกฟังก์ชัน line-bot ไม่ได้'); }
+  $('rmSetup').disabled=false;
+};
 $('lineForm').addEventListener('input',()=>{ S.line.dirty=true; });
 $('lineForm').addEventListener('submit',async e=>{ e.preventDefault();
   const { error } = await sb.rpc('line_save_settings',{ p_daily_enabled:$('ls-daily').checked, p_daily_hour:+$('ls-hour').value,
+    p_weekly_enabled:$('ls-weekly').checked, p_weekly_hour:+$('ls-whour').value,
     p_notify_changes:$('ls-changes').checked, p_notify_cancel_admin:$('ls-cancel').checked, p_notify_new_request_admin:$('ls-new').checked });
   if(error) return toast(errText(error));
   S.line.dirty=false; toast('บันทึกการตั้งค่า LINE แล้ว'); reload('line');
@@ -741,7 +785,7 @@ $('lineCode').onclick=async()=>{
   S.line.code=data; S.line.codeExp=Date.now()+30*60000; renderLineAdmin();
 };
 $('sendNow').onclick=async()=>{
-  const what=$('lineDay').value==='0'?'today':'tomorrow';
+  const what=$('lineDay').value;
   const { error } = await sb.rpc('line_send_now',{p_what:what});
   if(error) return toast(errText(error)); toast('ส่งเข้าคิวแล้ว ข้อความจะถึงกลุ่มภายในไม่กี่วินาที'); reload('line');
 };
@@ -772,6 +816,11 @@ document.addEventListener('click',async e=>{
     return;
   }
   if(act==='copytext') return copy(b.dataset.text);
+  if(act==='drvlinkreset'){
+    if(S.confirmDel!=='drvlink'){ S.confirmDel='drvlink'; renderDriverLink('lineDrvLink',true); setTimeout(()=>{ if(S.confirmDel==='drvlink'){ S.confirmDel=null; renderDriverLink('lineDrvLink',true); } },4000); return; }
+    S.confirmDel=null; const { data, error }=await sb.rpc('driver_link_reset');
+    if(error) return toast(errText(error)); S.driverLink=data; toast('สร้างลิงก์ใหม่แล้ว ลิงก์เก่าใช้ไม่ได้อีก'); renderAdmin(); return;
+  }
   if(act==='lineunlink'){
     if(S.confirmDel!=='line-'+id){ S.confirmDel='line-'+id; renderLineAdmin(); setTimeout(()=>{ if(S.confirmDel==='line-'+id){ S.confirmDel=null; renderLineAdmin(); } },4000); return; }
     S.confirmDel=null; const { error }=await sb.rpc('line_unlink',{p_kind:id});

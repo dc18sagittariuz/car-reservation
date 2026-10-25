@@ -319,3 +319,12 @@ pre.msg{white-space:pre-wrap;background:var(--sunk);border:1px solid var(--line)
 .pw-box input{width:auto;flex:1;min-width:150px;padding:5px 9px}
 .pw-new{margin-top:6px;font-size:.88rem}
 .pw-new code{background:var(--ok-soft);color:var(--ok);padding:2px 8px;border-radius:6px;font-size:.95rem}
+
+/* ---------- quota meter / driver link ---------- */
+.meter{height:8px;border-radius:5px;background:var(--sunk);overflow:hidden;margin-top:8px}
+.meter i{display:block;height:100%;background:var(--primary);border-radius:5px}
+.meter.warn i{background:var(--warn)} .meter.bad i{background:var(--bad)}
+.kpi.bad b{color:var(--bad)}
+.kpi small{display:block;color:var(--muted);font-size:.78rem;margin-top:4px}
+.linkbox{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.linkbox code{flex:1;min-width:0;overflow-wrap:anywhere;background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:.82rem}

@@ -61,6 +61,9 @@ const HELP = [
   "",
   "/งานวันนี้ – สรุปงานขับรถวันนี้",
   "/งานพรุ่งนี้ – สรุปงานขับรถพรุ่งนี้",
+  "/งานสัปดาห์นี้ – งานจันทร์ถึงอาทิตย์นี้",
+  "/งานสัปดาห์หน้า – งานสัปดาห์ถัดไป",
+  "/ปฏิทิน – ลิงก์ปฏิทินงานสำหรับเปิดในมือถือ",
   "/ตั้งกลุ่มคนขับ รหัส – เชื่อมกลุ่มนี้เป็นกลุ่มพนักงานขับรถ",
   "/ตั้งผู้ดูแล รหัส – เชื่อมแชทนี้ให้รับแจ้งเตือนผู้ดูแล",
   "",
@@ -112,6 +115,50 @@ async function chatName(src: any): Promise<string> {
   return src.roomId ? "ห้องแชท LINE" : "แชท LINE";
 }
 
+// ใครใช้คำสั่งดูงานได้: กลุ่มคนขับ, แชทผู้ดูแล, หรือแชทส่วนตัวของคนที่อยู่ในกลุ่มคนขับ (ใช้ผ่าน Rich menu)
+// deno-lint-ignore no-explicit-any
+async function allowed(src: any, target: string, s: any): Promise<boolean> {
+  if (!s) return false;
+  if (target === s.drivers_target || target === s.admin_target) return true;
+  if (src.type === "user" && src.userId && s.drivers_target?.startsWith("C")) {
+    try { await lineApi(`/v2/bot/group/${s.drivers_target}/member/${src.userId}`); return true; } catch { return false; }
+  }
+  return false;
+}
+
+// ---------- Rich menu (เมนูด้านล่างแชทส่วนตัวกับบอท) ----------
+const RICHMENU_NAME = "car-reservation";
+async function setupRichMenu() {
+  const s = await selectOne("line_settings", "id=eq.1&select=site_url");
+  const imgUrl = `${s?.site_url ?? ""}richmenu.png`;
+  const img = await fetch(imgUrl);
+  if (!img.ok) throw new Error(`โหลดรูปเมนูไม่ได้ (${img.status}) จาก ${imgUrl}`);
+  const imgBytes = new Uint8Array(await img.arrayBuffer());
+
+  const W = 2500, H = 1686, cw = [833, 834, 833], xs = [0, 833, 1667];
+  const labels = [["/งานวันนี้", "/งานพรุ่งนี้", "/งานสัปดาห์นี้"], ["/งานสัปดาห์หน้า", "/ปฏิทิน", "/ช่วยเหลือ"]];
+  const areas = labels.flatMap((row, r) => row.map((text, c) => ({
+    bounds: { x: xs[c], y: r * 843, width: cw[c], height: 843 }, action: { type: "message", text },
+  })));
+  const old = (await lineApi("/v2/bot/richmenu/list")).richmenus ?? [];
+  const created = await lineApi("/v2/bot/richmenu", { method: "POST", body: JSON.stringify({
+    size: { width: W, height: H }, selected: true, name: RICHMENU_NAME, chatBarText: "เมนูงานขับรถ", areas,
+  }) });
+  const id = created.richMenuId as string;
+  const up = await fetch(`https://api-data.line.me/v2/bot/richmenu/${id}/content`, {
+    method: "POST", headers: { Authorization: `Bearer ${TOKEN}`, "Content-Type": "image/png" }, body: imgBytes,
+  });
+  if (!up.ok) throw new Error(`อัปโหลดรูปเมนูไม่สำเร็จ: ${up.status} ${(await up.text()).slice(0, 200)}`);
+  await lineApi(`/v2/bot/user/all/richmenu/${id}`, { method: "POST" });
+  // deno-lint-ignore no-explicit-any
+  for (const m of old as any[]) {
+    if (m.name === RICHMENU_NAME && m.richMenuId !== id) {
+      try { await lineApi(`/v2/bot/richmenu/${m.richMenuId}`, { method: "DELETE" }); } catch { /* ignore */ }
+    }
+  }
+  return { ok: true, richMenuId: id };
+}
+
 // ---------- Webhook ----------
 // deno-lint-ignore no-explicit-any
 async function handleEvent(ev: any) {
@@ -140,13 +187,20 @@ async function handleEvent(ev: any) {
       : "❌ รหัสไม่ถูกต้องหรือหมดอายุ (รหัสใช้ได้ 30 นาที ครั้งเดียว)\nสร้างรหัสใหม่ได้ที่หน้าเว็บ เมนู แจ้งงานกลุ่ม LINE");
   }
 
-  const jobs = text.match(/^\/งาน(วันนี้|พรุ่งนี้)$/);
-  if (jobs) {
-    const s = await selectOne("line_settings", "id=eq.1&select=drivers_target,admin_target");
-    if (!s || (target !== s.drivers_target && target !== s.admin_target)) {
-      return reply(ev.replyToken, "แชทนี้ยังไม่ได้เชื่อมกับระบบจองรถ\nพิมพ์ /ช่วยเหลือ เพื่อดูวิธีเชื่อม");
+  const jobs = text.match(/^\/งาน(วันนี้|พรุ่งนี้|สัปดาห์นี้|สัปดาห์หน้า)$/);
+  const cal = text === "/ปฏิทิน";
+  if (jobs || cal) {
+    const s = await selectOne("line_settings", "id=eq.1&select=drivers_target,admin_target,driver_token,site_url");
+    if (!(await allowed(src, target, s))) {
+      return reply(ev.replyToken, "แชทนี้ยังไม่ได้เชื่อมกับระบบจองรถ\nพนักงานขับรถต้องอยู่ในกลุ่มคนขับที่มีบอทอยู่ด้วย\nพิมพ์ /ช่วยเหลือ เพื่อดูรายละเอียด");
     }
-    const data = await rpc("line_daily_text_rel", { p_offset: jobs[1] === "วันนี้" ? 0 : 1 });
+    if (cal) {
+      return reply(ev.replyToken, `🗓️ ปฏิทินงานขับรถ (เปิดในมือถือได้เลย)\n${s.site_url}driver.html?k=${s.driver_token}\n\nลิงก์นี้ใช้ภายในหน่วยงานเท่านั้น กรุณาอย่าส่งต่อ`);
+    }
+    const w = jobs![1];
+    const data = w === "วันนี้" || w === "พรุ่งนี้"
+      ? await rpc("line_daily_text_rel", { p_offset: w === "วันนี้" ? 0 : 1 })
+      : await rpc("line_week_text_rel", { p_weeks: w === "สัปดาห์นี้" ? 0 : 1 });
     return reply(ev.replyToken, String(data));
   }
 
@@ -174,14 +228,21 @@ async function flush() {
   return { sent, failed };
 }
 
-// ---------- สถานะ (เฉพาะผู้ดูแล) ----------
-async function status(req: Request) {
+// ---------- ตรวจสิทธิ์ผู้เรียกจากหน้าเว็บ ----------
+async function roleOf(req: Request): Promise<string | null> {
   const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer /i, "");
   const ur = jwt ? await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: KEY, Authorization: `Bearer ${jwt}` } }) : null;
   const user = ur && ur.ok ? await ur.json() : null;
-  if (!user?.id) return json({ error: "ต้องเข้าสู่ระบบ" }, 401);
+  if (!user?.id) return null;
   const p = await selectOne("profiles", `id=eq.${user.id}&select=role`);
-  if (!["admin", "superadmin"].includes(p?.role)) return json({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
+  return p?.role ?? null;
+}
+
+// ---------- สถานะ (เฉพาะผู้ดูแล) ----------
+async function status(req: Request) {
+  const role = await roleOf(req);
+  if (!role) return json({ error: "ต้องเข้าสู่ระบบ" }, 401);
+  if (!["admin", "superadmin"].includes(role)) return json({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
 
   const out: Record<string, unknown> = { tokenSet: !!TOKEN, secretSet: !!SECRET };
   if (!TOKEN) return json(out);
@@ -192,6 +253,7 @@ async function status(req: Request) {
   if (s?.drivers_target?.startsWith("C")) {
     try { out.driversMembers = (await lineApi(`/v2/bot/group/${s.drivers_target}/members/count`)).count; } catch { /* ignore */ }
   }
+  try { out.richMenuId = (await lineApi("/v2/bot/user/all/richmenu")).richMenuId ?? null; } catch { out.richMenuId = null; }
   return json(out);
 }
 
@@ -219,6 +281,11 @@ Deno.serve(async (req) => {
     const action = body ? (JSON.parse(body).action ?? "") : "";
     if (action === "flush") return json(await flush());
     if (action === "status") return await status(req);
+    if (action === "richmenu") {
+      if ((await roleOf(req)) !== "superadmin") return json({ error: "เฉพาะ Super Admin" }, 403);
+      if (!TOKEN) return json({ error: "ยังไม่ได้ตั้ง LINE_CHANNEL_ACCESS_TOKEN" }, 400);
+      return json(await setupRichMenu());
+    }
     return json({ error: "unknown action" }, 400);
   } catch (e) {
     console.error(e);
