@@ -16,6 +16,9 @@
 | `index.html`, `styles.css`, `app.js` | หน้าเว็บ |
 | `config.js` | URL และ Publishable key ของ Supabase |
 | `supabase/schema.sql` | สร้างตาราง สิทธิ์ และกฎกันจองซ้อน |
+| `supabase/line.sql` | ส่วนฐานข้อมูลของบอท LINE (คิวข้อความ ตั้งเวลา แจ้งเตือนอัตโนมัติ) |
+| `supabase/functions/line-bot/index.ts` | Edge Function รับ Webhook และส่งข้อความ LINE |
+| `docs/LINE.md` | คู่มือติดตั้งบอท LINE |
 | `.github/workflows/keepalive.yml` | งานอัตโนมัติกันโปรเจกต์ Supabase ฟรีหยุดทำงาน |
 
 ## ติดตั้ง (ทำครั้งเดียว)
@@ -49,5 +52,5 @@ Repo → แท็บ **Actions** → **Supabase keep-alive** → **Run workflow
 - `config.js` ใช้ **Publishable key** ซึ่งเปิดเผยได้ สิทธิ์จริงถูกควบคุมด้วย Row Level Security ใน `schema.sql`
 - ห้ามใส่ **Secret key** หรือ `service_role` ลงใน repo นี้เด็ดขาด
 
-## ขั้นต่อไป: แชทบอท LINE
-สร้าง LINE Official Account + Messaging API แล้วเขียน Supabase Edge Function ส่งสรุปงานวันถัดไปเข้ากลุ่มพนักงานขับรถทุกเย็น
+## บอท LINE แจ้งงานพนักงานขับรถ
+ทำตามคู่มือ [`docs/LINE.md`](docs/LINE.md)

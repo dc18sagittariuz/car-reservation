@@ -288,3 +288,25 @@ pre.msg{white-space:pre-wrap;background:var(--sunk);border:1px solid var(--line)
 .notif.unread{border-color:var(--warn);background:linear-gradient(0deg,var(--surface),var(--surface)) padding-box}
 .notif.unread::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--warn)}
 .notif-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* ---------- LINE admin ---------- */
+.conn{display:grid;gap:10px}
+.conn-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border:1px solid var(--line);border-radius:12px}
+.conn-row b{font-family:var(--display);font-weight:500}
+.conn-row .small{display:block}
+.conn-ok{color:var(--ok)} .conn-no{color:var(--warn)}
+.pair{margin-top:14px;padding:16px;border-radius:12px;background:var(--primary-soft);display:grid;gap:10px}
+.pair .code{font-family:var(--display);font-size:2.2rem;letter-spacing:.25em;font-weight:600;color:var(--primary);font-variant-numeric:tabular-nums}
+.cmd{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.cmd code{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:5px 10px;font-size:.95rem}
+.chk{display:flex;gap:10px;align-items:flex-start;color:var(--ink);font-weight:400;font-size:.95rem}
+.chk input[type=checkbox]{width:18px;height:18px;margin-top:3px;flex:none;accent-color:var(--primary)}
+.chk select{width:auto;display:inline-block;padding:3px 8px;margin:0 4px}
+.logrow{display:grid;grid-template-columns:auto minmax(0,1fr);gap:4px 12px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;font-size:.88rem}
+.logrow .meta{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--muted)}
+.logrow .txt{grid-column:1/-1;overflow-wrap:anywhere}
+.logrow .err{grid-column:1/-1;color:var(--bad);font-size:.82rem;overflow-wrap:anywhere}
+.st-sent{background:var(--ok-soft);color:var(--ok)}
+.st-sending{background:var(--warn-soft);color:var(--warn)}
+.st-failed{background:var(--bad-soft);color:var(--bad)}
+.st-skipped{background:var(--sunk);color:var(--muted)}

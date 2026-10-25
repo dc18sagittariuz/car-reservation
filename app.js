@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
 const KIND = { van:'รถตู้', pickup:'รถกระบะ', sedan:'รถเก๋ง' };
 const ST = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
 const PURPOSES = ['ประชุม / สัมมนา','ติดต่อราชการ','ลงพื้นที่ / ตรวจงาน','อบรม / ศึกษาดูงาน','รับ-ส่งเอกสาร / พัสดุ','รับ-ส่งบุคคล','อื่น ๆ'];
-const S = { user:null, profile:null, isAdmin:false, vehicles:[], bookings:[], drivers:[], profiles:[], notifs:[], cancelOpen:null,
+const S = { user:null, profile:null, isAdmin:false, vehicles:[], bookings:[], drivers:[], profiles:[], notifs:[], cancelOpen:null, line:{settings:null, outbox:[], status:null, code:null, codeExp:0, missing:false, dirty:false},
   mode:'month', cur:new Date(), filter:'pending', rMonth:null, view:'home', pickVeh:null, confirmDel:null, channel:null };
 
 /* ---------- helpers ---------- */
@@ -182,13 +182,38 @@ async function loadNotifs(){
   const { data, error } = await sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(100);
   if(!error) S.notifs=data||[];
 }
+async function loadLine(){
+  if(!S.isAdmin) return;
+  const prev=S.line.settings;
+  const { data, error } = await sb.from('line_settings').select('*').eq('id',1).maybeSingle();
+  S.line.missing = !!error || !data;
+  if(error) return;
+  S.line.settings=data;
+  if(prev && data){
+    if(!prev.drivers_target && data.drivers_target){ toast('✅ เชื่อมกลุ่มคนขับ "'+(data.drivers_name||'')+'" แล้ว'); S.line.code=null; lineStatus(); }
+    if(!prev.admin_target && data.admin_target){ toast('✅ เชื่อมแชทผู้ดูแล "'+(data.admin_name||'')+'" แล้ว'); S.line.code=null; }
+  }
+  const o = await sb.from('line_outbox').select('id,audience,body,status,error,created_at,sent_at').order('id',{ascending:false}).limit(20);
+  if(!o.error) S.line.outbox=o.data||[];
+}
+async function lineStatus(){
+  if(!S.isAdmin || S.line.missing) return;
+  try{
+    const { data:{ session } } = await sb.auth.getSession();
+    const r = await fetch(CFG.SUPABASE_URL+'/functions/v1/line-bot', { method:'POST',
+      headers:{ 'Content-Type':'application/json', 'apikey':CFG.SUPABASE_KEY, 'Authorization':'Bearer '+(session?session.access_token:'') },
+      body: JSON.stringify({action:'status'}) });
+    S.line.status = r.ok ? await r.json() : { fnError: r.status===401 ? 'ฟังก์ชัน line-bot ยังเปิด Verify JWT อยู่ หรือยังไม่ได้ deploy' : 'เรียกฟังก์ชัน line-bot ไม่สำเร็จ ('+r.status+')' };
+  }catch(e){ S.line.status = { fnError:'ยังเรียกฟังก์ชัน line-bot ไม่ได้ ตรวจว่า deploy แล้ว' }; }
+  renderLineAdmin();
+}
 async function loadProfiles(){
   if(!S.isAdmin) return;
   const { data } = await sb.from('profiles').select('*').order('full_name');
   S.profiles=data||[];
 }
 async function loadAll(){
-  const errs=(await Promise.all([loadVehicles(),loadDrivers(),loadBookings(),loadProfiles(),loadNotifs()])).filter(Boolean);
+  const errs=(await Promise.all([loadVehicles(),loadDrivers(),loadBookings(),loadProfiles(),loadNotifs(),loadLine()])).filter(Boolean);
   const off=$('offline');
   if(errs.length){
     off.hidden=false;
@@ -207,6 +232,7 @@ function reload(table){
     if(table==='vehicles') await loadVehicles();
     if(table==='profiles') await loadProfiles();
     if(table==='notifications') await loadNotifs();
+    if(table==='line') await loadLine();
     renderAll();
   },250);
 }
@@ -216,6 +242,8 @@ function subscribe(){
     .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},()=>reload('bookings'))
     .on('postgres_changes',{event:'*',schema:'public',table:'drivers'},()=>reload('drivers'))
     .on('postgres_changes',{event:'*',schema:'public',table:'vehicles'},()=>reload('vehicles'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'line_outbox'},()=>{ if(S.isAdmin) reload('line'); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'line_settings'},()=>{ if(S.isAdmin) reload('line'); })
     .on('postgres_changes',{event:'*',schema:'public',table:'notifications'},p=>{
       if(!S.isAdmin) return;
       if(p.eventType==='INSERT' && p.new && p.new.message) toast('🔔 '+p.new.message);
@@ -240,6 +268,7 @@ function go(v){
   try{ history.replaceState(null,'','#'+v); }catch(e){}
   const nb=document.querySelector(`.navbtn[data-v="${v}"]`); if(nb && innerWidth<900) nb.scrollIntoView({block:'nearest',inline:'center'});
   window.scrollTo({top:0});
+  if(v==='line' && S.isAdmin){ S.line.dirty=false; renderLineAdmin(); lineStatus(); }
 }
 $('nav').onclick=e=>{ const b=e.target.closest('.navbtn'); if(b) go(b.dataset.v); };
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
@@ -529,7 +558,7 @@ function renderAdmin(){
     <td>${p.role==='admin'?'<span class="role-pill">ผู้ดูแลระบบ</span>':'ผู้ใช้ทั่วไป'}</td>
     <td>${p.id===S.user.id?'<span class="small muted">คุณ</span>':`<button class="btn sm" data-act="role" data-id="${p.id}" data-role="${p.role==='admin'?'user':'admin'}">${p.role==='admin'?'ถอนสิทธิ์ผู้ดูแล':'ตั้งเป็นผู้ดูแล'}</button>`}</td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">ยังไม่มีผู้ใช้</td></tr>';
-  renderLine(); renderNotifs();
+  renderLine(); renderNotifs(); renderLineAdmin();
 }
 function renderNotifs(){
   if(!S.isAdmin) return;
@@ -545,6 +574,60 @@ function renderNotifs(){
       ${bk?`<div class="small muted">${esc(vName(bk.vehicle))} · ${whenText(bk)} · ไปที่ ${esc(bk.destination)}</div>`:''}
       ${n.read_at?'':`<div><button class="btn sm" data-act="readnotif" data-id="${n.id}">อ่านแล้ว</button></div>`}
     </div>`; }).join('') : '<div class="empty">ยังไม่มีการแจ้งเตือน เมื่อผู้จองยกเลิกการจองที่อนุมัติแล้ว จะแสดงที่นี่</div>';
+}
+const LST={sent:'ส่งแล้ว',pending:'รอส่ง',sending:'กำลังส่ง',failed:'ส่งไม่สำเร็จ',skipped:'ไม่ได้ส่ง'};
+function renderLineAdmin(){
+  if(!S.isAdmin) return;
+  const L=S.line, st=L.status||{}, cfg=L.settings;
+  const note=$('lineNotice');
+  const problems=[];
+  if(L.missing) problems.push('ยังไม่ได้ติดตั้งส่วน LINE ในฐานข้อมูล: รันไฟล์ supabase/line.sql ใน SQL Editor ตามคู่มือ docs/LINE.md');
+  else if(st.fnError) problems.push(st.fnError);
+  else if(L.status && !st.tokenSet) problems.push('ยังไม่ได้ตั้ง Secret LINE_CHANNEL_ACCESS_TOKEN ใน Supabase Edge Functions');
+  else if(L.status && !st.secretSet) problems.push('ยังไม่ได้ตั้ง Secret LINE_CHANNEL_SECRET ใน Supabase Edge Functions');
+  else if(st.botError) problems.push('Channel access token ใช้ไม่ได้: '+st.botError);
+  note.hidden=!problems.length; note.textContent=problems.join(' · ');
+
+  const bot=st.bot;
+  $('lineBot').textContent = bot ? `บอท: ${bot.displayName||''}${bot.basicId?' ('+bot.basicId+')':''}` : '';
+  const row=(kind,label,target,name,how)=>`<div class="conn-row"><div style="min-width:0"><b>${label}</b>
+      ${target?`<span class="small conn-ok">✅ เชื่อมแล้ว: ${esc(name||'')}</span>`:`<span class="small conn-no">ยังไม่เชื่อม · ${how}</span>`}</div>
+      ${target?`<button class="btn sm danger" data-act="lineunlink" data-id="${kind}">${S.confirmDel==='line-'+kind?'ยืนยันยกเลิก':'ยกเลิกการเชื่อม'}</button>`:''}</div>`;
+  $('lineConn').innerHTML = cfg ? row('drivers','กลุ่มพนักงานขับรถ',cfg.drivers_target,cfg.drivers_name,'เชิญบอทเข้ากลุ่ม แล้วพิมพ์คำสั่งพร้อมรหัส')
+    + row('admins','แจ้งเตือนผู้ดูแล',cfg.admin_target,cfg.admin_name,'เพิ่มบอทเป็นเพื่อน แล้วพิมพ์คำสั่งพร้อมรหัส') : '';
+
+  const pair=$('linePair');
+  if(L.code && Date.now()<L.codeExp){
+    const exp=new Date(L.codeExp).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+    const c1='/ตั้งกลุ่มคนขับ '+L.code, c2='/ตั้งผู้ดูแล '+L.code;
+    pair.hidden=false;
+    pair.innerHTML=`<div class="small muted">รหัสเชื่อมต่อ (ใช้ได้ถึง ${exp} น.)</div><div class="code">${L.code}</div>
+      <div class="cmd"><span class="small">ในกลุ่มคนขับ พิมพ์</span><code>${c1}</code><button class="btn sm" data-act="copytext" data-text="${c1}">คัดลอก</button></div>
+      <div class="cmd"><span class="small">ในแชทส่วนตัวกับบอท พิมพ์</span><code>${c2}</code><button class="btn sm" data-act="copytext" data-text="${c2}">คัดลอก</button></div>`;
+  } else { pair.hidden=true; pair.innerHTML=''; }
+
+  let q='';
+  if(st.consumption){
+    const used=st.consumption.totalUsage, lim=st.quota&&st.quota.type==='limited'?st.quota.value:null;
+    q+=`โควตาข้อความเดือนนี้: ใช้ไป ${used}${lim!=null?' / '+lim:''} ข้อความ (ข้อความตอบคำสั่ง /งานวันนี้ ไม่นับ)`;
+  }
+  if(st.driversMembers) q+=`${q?' · ':''}กลุ่มคนขับมี ${st.driversMembers} คน ส่ง 1 ครั้งนับเป็น ${st.driversMembers} ข้อความ`;
+  $('lineQuota').textContent=q;
+
+  if(cfg && !L.dirty){
+    if(!$('ls-hour').options.length) $('ls-hour').innerHTML=Array.from({length:24},(_,h)=>`<option value="${h}">${pad(h)}:00</option>`).join('');
+    $('ls-daily').checked=cfg.daily_enabled; $('ls-hour').value=String(cfg.daily_hour);
+    $('ls-changes').checked=cfg.notify_changes; $('ls-cancel').checked=cfg.notify_cancel_admin; $('ls-new').checked=cfg.notify_new_request_admin;
+  }
+  const dis = L.missing || !cfg;
+  ['lineCode','sendNow','sendTest'].forEach(id=>$(id).disabled=dis);
+  if($('lineDay').value==='7') $('sendNow').disabled=true;
+
+  $('lineLog').innerHTML = L.outbox.length ? L.outbox.map(o=>{
+    const t=new Date(o.created_at).toLocaleString('th-TH',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+    return `<div class="logrow"><div class="meta"><span class="pill st-${o.status}">${LST[o.status]||o.status}</span><span>${o.audience==='drivers'?'กลุ่มคนขับ':'ผู้ดูแล'}</span><span>${t} น.</span></div>
+      <div class="txt">${esc(o.body.split('\n').slice(0,2).join(' · '))}</div>${o.error?`<div class="err">${esc(o.error)}</div>`:''}</div>`;
+  }).join('') : '<div class="empty">ยังไม่มีการส่งข้อความ</div>';
 }
 function jobText(b,i){
   return `${i!=null?(i+1)+'. ':''}${vName(b.vehicle)}
@@ -562,7 +645,28 @@ function renderLine(){
     :`📋 งานขับรถ${days===1?'พรุ่งนี้':'วันนี้'} ${thDate(from,{weekday:'long',day:'numeric',month:'long',year:'numeric'})}`;
   $('lineMsg').textContent=head+'\n\n'+(jobs.length?jobs.map(jobText).join('\n\n'):'ไม่มีงาน')+'\n\nหากติดขัดแจ้งผู้ดูแลระบบได้ทันที';
 }
-$('lineDay').onchange=renderLine;
+$('lineDay').onchange=()=>{ renderLine(); renderLineAdmin(); };
+$('lineForm').addEventListener('input',()=>{ S.line.dirty=true; });
+$('lineForm').addEventListener('submit',async e=>{ e.preventDefault();
+  const { error } = await sb.rpc('line_save_settings',{ p_daily_enabled:$('ls-daily').checked, p_daily_hour:+$('ls-hour').value,
+    p_notify_changes:$('ls-changes').checked, p_notify_cancel_admin:$('ls-cancel').checked, p_notify_new_request_admin:$('ls-new').checked });
+  if(error) return toast(errText(error));
+  S.line.dirty=false; toast('บันทึกการตั้งค่า LINE แล้ว'); reload('line');
+});
+$('lineCode').onclick=async()=>{
+  const { data, error } = await sb.rpc('line_new_pair_code');
+  if(error) return toast(errText(error));
+  S.line.code=data; S.line.codeExp=Date.now()+30*60000; renderLineAdmin();
+};
+$('sendNow').onclick=async()=>{
+  const what=$('lineDay').value==='0'?'today':'tomorrow';
+  const { error } = await sb.rpc('line_send_now',{p_what:what});
+  if(error) return toast(errText(error)); toast('ส่งเข้าคิวแล้ว ข้อความจะถึงกลุ่มภายในไม่กี่วินาที'); reload('line');
+};
+$('sendTest').onclick=async()=>{
+  const { error } = await sb.rpc('line_send_now',{p_what:'test'});
+  if(error) return toast(errText(error)); toast('ส่งข้อความทดสอบแล้ว'); reload('line');
+};
 $('copyLine').onclick=()=>copy($('lineMsg').textContent);
 $('jobFilter').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; S.filter=b.dataset.f;
   $('jobFilter').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b)); renderAdmin(); };
@@ -584,6 +688,12 @@ document.addEventListener('click',async e=>{
     const ok=await upd({status:'cancelled',cancel_reason:reason.trim()}, wasApproved?'ยกเลิกการจองแล้ว ระบบแจ้งผู้ดูแลระบบให้แล้ว':'ยกเลิกคำขอแล้ว');
     if(ok) S.cancelOpen=null; else b.disabled=false;
     return;
+  }
+  if(act==='copytext') return copy(b.dataset.text);
+  if(act==='lineunlink'){
+    if(S.confirmDel!=='line-'+id){ S.confirmDel='line-'+id; renderLineAdmin(); setTimeout(()=>{ if(S.confirmDel==='line-'+id){ S.confirmDel=null; renderLineAdmin(); } },4000); return; }
+    S.confirmDel=null; const { error }=await sb.rpc('line_unlink',{p_kind:id});
+    if(error) return toast(errText(error)); toast('ยกเลิกการเชื่อมแล้ว'); reload('line'); return;
   }
   if(act==='readnotif'||act==='readall'){
     const qb=sb.from('notifications').update({read_at:new Date().toISOString()});
