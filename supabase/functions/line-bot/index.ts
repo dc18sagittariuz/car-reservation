@@ -11,8 +11,6 @@
 // Secrets ที่ต้องตั้ง: LINE_CHANNEL_ACCESS_TOKEN, LINE_CHANNEL_SECRET
 // ต้องปิด "Verify JWT" ของฟังก์ชันนี้ เพราะ LINE ส่ง JWT มาไม่ได้
 // =====================================================================
-import { createClient } from "npm:@supabase/supabase-js@2.117.3";
-
 const TOKEN = Deno.env.get("LINE_CHANNEL_ACCESS_TOKEN") ?? "";
 const SECRET = Deno.env.get("LINE_CHANNEL_SECRET") ?? "";
 
@@ -27,7 +25,28 @@ function serviceKey(): string {
   }
   return Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 }
-const sb = createClient(Deno.env.get("SUPABASE_URL")!, serviceKey(), { auth: { persistSession: false } });
+// เรียกฐานข้อมูลผ่าน REST โดยตรง (ไม่โหลดไลบรารี ทำให้ฟังก์ชันตื่นเร็ว ทันเวลาที่ LINE รอ)
+const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const KEY = serviceKey();
+function dbHeaders(extra: Record<string, string> = {}) {
+  const h: Record<string, string> = { apikey: KEY, "Content-Type": "application/json", ...extra };
+  if (KEY.startsWith("eyJ")) h.Authorization = `Bearer ${KEY}`;
+  return h;
+}
+async function rpc(fn: string, args: Record<string, unknown> = {}) {
+  const r = await fetch(`${SB_URL}/rest/v1/rpc/${fn}`, { method: "POST", headers: dbHeaders(), body: JSON.stringify(args) });
+  if (!r.ok) throw new Error(`DB ${fn} ${r.status}: ${(await r.text()).slice(0, 300)}`);
+  return await r.json();
+}
+// deno-lint-ignore no-explicit-any
+async function selectOne(table: string, query: string): Promise<any> {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`, { headers: dbHeaders({ Accept: "application/vnd.pgrst.object+json" }) });
+  return r.ok ? await r.json() : null;
+}
+async function patch(table: string, query: string, body: Record<string, unknown>) {
+  const r = await fetch(`${SB_URL}/rest/v1/${table}?${query}`, { method: "PATCH", headers: dbHeaders({ Prefer: "return=minimal" }), body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`DB update ${r.status}: ${(await r.text()).slice(0, 300)}`);
+}
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -113,8 +132,7 @@ async function handleEvent(ev: any) {
   if (pair) {
     const kind = pair[1] === "กลุ่มคนขับ" ? "drivers" : "admins";
     const name = await chatName(src);
-    const { data, error } = await sb.rpc("line_pair", { p_code: pair[2], p_kind: kind, p_target: target, p_name: name });
-    if (error) throw error;
+    const data = await rpc("line_pair", { p_code: pair[2], p_kind: kind, p_target: target, p_name: name });
     return reply(ev.replyToken, data
       ? (kind === "drivers"
           ? `✅ เชื่อม "${name}" เป็นกลุ่มพนักงานขับรถแล้ว\nกลุ่มนี้จะได้รับสรุปงานล่วงหน้าทุกวัน และแจ้งเตือนเมื่องานเปลี่ยน`
@@ -124,12 +142,11 @@ async function handleEvent(ev: any) {
 
   const jobs = text.match(/^\/งาน(วันนี้|พรุ่งนี้)$/);
   if (jobs) {
-    const { data: s } = await sb.from("line_settings").select("drivers_target, admin_target").eq("id", 1).single();
+    const s = await selectOne("line_settings", "id=eq.1&select=drivers_target,admin_target");
     if (!s || (target !== s.drivers_target && target !== s.admin_target)) {
       return reply(ev.replyToken, "แชทนี้ยังไม่ได้เชื่อมกับระบบจองรถ\nพิมพ์ /ช่วยเหลือ เพื่อดูวิธีเชื่อม");
     }
-    const { data, error } = await sb.rpc("line_daily_text_rel", { p_offset: jobs[1] === "วันนี้" ? 0 : 1 });
-    if (error) throw error;
+    const data = await rpc("line_daily_text_rel", { p_offset: jobs[1] === "วันนี้" ? 0 : 1 });
     return reply(ev.replyToken, String(data));
   }
 
@@ -140,17 +157,16 @@ async function handleEvent(ev: any) {
 async function flush() {
   let sent = 0, failed = 0;
   for (let round = 0; round < 5; round++) {
-    const { data, error } = await sb.rpc("line_claim_outbox");
-    if (error) throw error;
+    const data = await rpc("line_claim_outbox");
     if (!data?.length) break;
     for (const m of data as { id: number; target: string | null; body: string }[]) {
       if (!m.target) continue;
       try {
         await push(m.target, m.body);
-        await sb.from("line_outbox").update({ status: "sent", sent_at: new Date().toISOString(), error: null }).eq("id", m.id);
+        await patch("line_outbox", `id=eq.${m.id}`, { status: "sent", sent_at: new Date().toISOString(), error: null });
         sent++;
       } catch (e) {
-        await sb.from("line_outbox").update({ status: "failed", error: String(e).slice(0, 500) }).eq("id", m.id);
+        await patch("line_outbox", `id=eq.${m.id}`, { status: "failed", error: String(e).slice(0, 500) });
         failed++;
       }
     }
@@ -161,9 +177,10 @@ async function flush() {
 // ---------- สถานะ (เฉพาะผู้ดูแล) ----------
 async function status(req: Request) {
   const jwt = (req.headers.get("authorization") ?? "").replace(/^Bearer /i, "");
-  const { data: u } = await sb.auth.getUser(jwt);
-  if (!u?.user) return json({ error: "ต้องเข้าสู่ระบบ" }, 401);
-  const { data: p } = await sb.from("profiles").select("role").eq("id", u.user.id).single();
+  const ur = jwt ? await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: KEY, Authorization: `Bearer ${jwt}` } }) : null;
+  const user = ur && ur.ok ? await ur.json() : null;
+  if (!user?.id) return json({ error: "ต้องเข้าสู่ระบบ" }, 401);
+  const p = await selectOne("profiles", `id=eq.${user.id}&select=role`);
   if (p?.role !== "admin") return json({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
 
   const out: Record<string, unknown> = { tokenSet: !!TOKEN, secretSet: !!SECRET };
@@ -171,7 +188,7 @@ async function status(req: Request) {
   try { out.bot = await lineApi("/v2/bot/info"); } catch (e) { out.botError = String(e); }
   try { out.quota = await lineApi("/v2/bot/message/quota"); } catch { /* ignore */ }
   try { out.consumption = await lineApi("/v2/bot/message/quota/consumption"); } catch { /* ignore */ }
-  const { data: s } = await sb.from("line_settings").select("drivers_target").eq("id", 1).single();
+  const s = await selectOne("line_settings", "id=eq.1&select=drivers_target");
   if (s?.drivers_target?.startsWith("C")) {
     try { out.driversMembers = (await lineApi(`/v2/bot/group/${s.drivers_target}/members/count`)).count; } catch { /* ignore */ }
   }
@@ -188,9 +205,15 @@ Deno.serve(async (req) => {
     if (sig) {
       if (!SECRET || !(await validSignature(body, sig))) return json({ error: "invalid signature" }, 401);
       const events = JSON.parse(body || "{}").events ?? [];
-      for (const ev of events) {
-        try { await handleEvent(ev); } catch (e) { console.error("event error", e); }
-      }
+      // ตอบ LINE ทันที แล้วค่อยทำงานต่อเบื้องหลัง (LINE รอไม่นาน)
+      const work = (async () => {
+        for (const ev of events) {
+          try { await handleEvent(ev); } catch (e) { console.error("event error", e); }
+        }
+      })();
+      // deno-lint-ignore no-explicit-any
+      const rt = (globalThis as any).EdgeRuntime;
+      if (rt?.waitUntil) rt.waitUntil(work); else await work;
       return json({ ok: true });
     }
     const action = body ? (JSON.parse(body).action ?? "") : "";
