@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>ระบบจองใช้รถภายในหน่วยงาน</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;500;600&family=Sarabun:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="styles.css">
+<style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+<defs>
+  <symbol id="ic-cal" viewBox="0 0 24 24"><rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></symbol>
+  <symbol id="ic-car" viewBox="0 0 24 24"><path d="M4 16v-4l2-5c.3-.8 1-1.3 1.9-1.3h8.2c.9 0 1.6.5 1.9 1.3l2 5v4"/><path d="M3 12h18v4.5H3z"/><path d="M5 16.5V19h3v-2.5M16 16.5V19h3v-2.5"/><circle cx="7" cy="14.2" r=".6"/><circle cx="17" cy="14.2" r=".6"/></symbol>
+  <symbol id="ic-list" viewBox="0 0 24 24"><rect x="4.5" y="3.5" width="15" height="17.5" rx="2"/><path d="M9 3.5V2.5h6v1M8 9h1M11 9h5M8 13h1M11 13h5M8 17h1M11 17h5"/></symbol>
+  <symbol id="ic-carinfo" viewBox="0 0 24 24"><path d="M3 15.5v-3.5l2.2-4.6c.3-.6.9-1 1.6-1h10.4c.7 0 1.3.4 1.6 1L21 12v3.5z"/><path d="M5 15.5V18h3v-2.5M16 15.5V18h3v-2.5M3 12h18"/></symbol>
+  <symbol id="ic-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
+  <symbol id="ic-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="ic-inbox" viewBox="0 0 24 24"><path d="M4 13l2.5-7.5h11L20 13v6H4z"/><path d="M4 13h4.5l1.5 2.5h4l1.5-2.5H20"/></symbol>
+  <symbol id="ic-driver" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="2.2"/><path d="M3.8 10.5c2.6.4 5.2.4 8.2-1 3 1.4 5.6 1.4 8.2 1M12 14.2V20.5M9.8 12.8l-4.6 5M14.2 12.8l4.6 5"/></symbol>
+  <symbol id="ic-chat" viewBox="0 0 24 24"><path d="M21 11.5c0 4.1-4 7.5-9 7.5-1 0-2-.1-2.9-.4L5 20l1-3.3C4.2 15.3 3 13.5 3 11.5 3 7.4 7 4 12 4s9 3.4 9 7.5z"/><path d="M8 11.5h.01M12 11.5h.01M16 11.5h.01"/></symbol>
+  <symbol id="ic-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="ic-pin" viewBox="0 0 24 24"><path d="M12 21s-6.5-6.2-6.5-11.2a6.5 6.5 0 0 1 13 0C18.5 14.8 12 21 12 21z"/><circle cx="12" cy="9.8" r="2.3"/></symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></symbol>
+  <symbol id="ic-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.5"/><path d="M5.5 20c.7-3.6 3.3-5.5 6.5-5.5s5.8 1.9 6.5 5.5"/></symbol>
+  <symbol id="ic-left" viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></symbol>
+  <symbol id="ic-right" viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></symbol>
+  <symbol id="ic-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+</defs>
+</svg>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+  <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><circle cx="17" cy="9.5" r="2.5"/><path d="M16.5 14.6c2.4.2 4 1.7 4.5 4.4"/></symbol>
+  <symbol id="ic-out" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 16l-4-4 4-4M5 12h10"/></symbol>
+</defs></svg>
+
+<header class="hero">
+  <div class="hero-in">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 72 56" aria-hidden="true"><path d="M14 24l6-13c1.2-2.6 3.6-4 6.3-4h19.4c2.7 0 5.1 1.4 6.3 4l6 13" fill="none" stroke="currentColor" stroke-width="6" stroke-linejoin="round"/><rect x="5" y="22" width="62" height="22" rx="8" fill="currentColor"/><rect x="9" y="40" width="13" height="13" rx="4" fill="currentColor"/><rect x="50" y="40" width="13" height="13" rx="4" fill="currentColor"/><circle cx="17" cy="32" r="4.2" fill="var(--surface)"/><circle cx="55" cy="32" r="4.2" fill="var(--surface)"/><rect x="27" y="30" width="18" height="4" rx="2" fill="var(--surface)"/></svg>
+      <div style="min-width:0">
+        <h1>ระบบจองใช้รถภายในหน่วยงาน</h1>
+        <div class="tag"><span>สะดวก</span><span>รวดเร็ว</span><span>ใช้รถได้อย่างมีประสิทธิภาพ</span></div>
+      </div>
+    </div>
+    <svg class="illus" id="illus" viewBox="0 0 520 150" aria-hidden="true"></svg>
+    <button class="userchip" id="userchip" title="ข้อมูลของฉัน" hidden>
+      <span class="avatar"><svg class="i" style="width:26px;height:26px"><use href="#ic-user"/></svg></span>
+      <span class="hi" id="hi"></span>
+      <svg class="i" style="color:var(--muted)"><use href="#ic-down"/></svg>
+    </button>
+  </div>
+</header>
+
+<div id="boot" class="loading">กำลังโหลด…</div>
+
+<!-- AUTH -->
+<section class="auth" id="auth" hidden>
+  <div class="panel">
+    <div class="seg" id="authMode"><button data-m="in" aria-pressed="true">เข้าสู่ระบบ</button><button data-m="up" aria-pressed="false">สมัครใช้งาน</button></div>
+    <form id="authForm" novalidate>
+      <div id="upFields" hidden style="display:grid;gap:14px">
+        <label>ชื่อ-นามสกุล<input id="a-name" autocomplete="name"></label>
+        <div class="row"><label>ฝ่าย / แผนก<input id="a-dept"></label><label>เบอร์ติดต่อ<input id="a-phone" type="tel" autocomplete="tel"></label></div>
+      </div>
+      <label>อีเมล<input id="a-email" type="email" autocomplete="email"></label>
+      <label>รหัสผ่าน<input id="a-pass" type="password" autocomplete="current-password" minlength="6"></label>
+      <button class="btn primary big" type="submit" id="authBtn">เข้าสู่ระบบ</button>
+      <div class="auth-msg" id="authMsg"></div>
+    </form>
+  </div>
+</section>
+
+<div class="app" id="app" hidden>
+  <aside class="side">
+    <nav id="nav">
+      <button class="navbtn" data-v="home"><svg class="i"><use href="#ic-cal"/></svg>หน้าหลัก</button>
+      <button class="navbtn" data-v="book"><svg class="i"><use href="#ic-car"/></svg>จองรถ</button>
+      <button class="navbtn" data-v="mine"><svg class="i"><use href="#ic-list"/></svg>รายการจองของฉัน</button>
+      <button class="navbtn" data-v="cars"><svg class="i"><use href="#ic-carinfo"/></svg>ข้อมูลรถ</button>
+      <button class="navbtn" data-v="report"><svg class="i"><use href="#ic-file"/></svg>รายงานการใช้งาน</button>
+      <button class="navbtn" data-v="prefs"><svg class="i"><use href="#ic-gear"/></svg>ตั้งค่า</button>
+      <div class="navgroup admin-only" hidden>ผู้ดูแลระบบ</div>
+      <button class="navbtn admin-only" data-v="admin" hidden><svg class="i"><use href="#ic-inbox"/></svg>จัดการคำขอ<span class="badge" id="pendingBadge" hidden>0</span></button>
+      <button class="navbtn admin-only" data-v="drivers" hidden><svg class="i"><use href="#ic-driver"/></svg>พนักงานขับรถ</button>
+      <button class="navbtn admin-only" data-v="users" hidden><svg class="i"><use href="#ic-users"/></svg>ผู้ใช้งาน</button>
+      <button class="navbtn admin-only" data-v="line" hidden><svg class="i"><use href="#ic-chat"/></svg>แจ้งงานกลุ่ม LINE</button>
+    </nav>
+    <div class="leaf">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 36V18" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M20 22C12 22 7 16 7 8c8 0 13 5 13 14z" fill="currentColor" opacity=".55"/><path d="M20 26c0-9 5-15 14-15 0 9-5 15-14 15z" fill="currentColor"/></svg>
+      <span>ร่วมดูแลทรัพยากร<br>ใช้รถอย่างคุ้มค่า</span>
+    </div>
+  </aside>
+
+  <main>
+    <div class="notice" id="offline" hidden></div>
+
+    <section class="view" id="v-home">
+      <div class="home">
+        <div class="panel">
+          <div class="panel-head"><h2>ปฏิทินการจองรถ</h2></div>
+          <div class="cal-bar">
+            <button class="iconbtn" id="prev" aria-label="ก่อนหน้า"><svg class="i"><use href="#ic-left"/></svg></button>
+            <button class="iconbtn" id="next" aria-label="ถัดไป"><svg class="i"><use href="#ic-right"/></svg></button>
+            <h3 id="calTitle"></h3>
+            <button class="btn sm" id="todayBtn">วันนี้</button>
+            <div class="seg" id="calMode">
+              <button data-m="month" aria-pressed="true">เดือน</button>
+              <button data-m="week" aria-pressed="false">สัปดาห์</button>
+              <button data-m="day" aria-pressed="false">วัน</button>
+            </div>
+          </div>
+          <div id="calBody"></div>
+          <div class="legend" id="legend"></div>
+        </div>
+        <div class="col">
+          <div class="panel">
+            <div class="panel-head"><h2>จองใช้รถ</h2></div>
+            <form id="quick" novalidate>
+              <div class="field"><svg class="i"><use href="#ic-cal"/></svg><label><span class="lbl">วันที่ใช้งาน</span><input type="date" id="q-date"></label></div>
+              <div class="field"><svg class="i"><use href="#ic-clock"/></svg><label><span class="lbl">เวลา</span>
+                <span class="timepair"><select id="q-st" aria-label="เวลาเริ่ม"></select><span>ถึง</span><select id="q-et" aria-label="เวลาสิ้นสุด"></select></span></label></div>
+              <div class="field"><svg class="i"><use href="#ic-pin"/></svg><label><span class="lbl">วัตถุประสงค์</span><select id="q-purpose"></select></label></div>
+              <button class="btn primary big" type="submit"><svg class="i"><use href="#ic-search"/></svg>ค้นหารถที่ว่าง</button>
+            </form>
+            <div class="avail-list" id="qResult"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>รถของหน่วยงาน</h2></div>
+            <div class="fleet" id="fleet"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="v-book" hidden>
+      <div class="pagehead"><div><h2>จองรถ</h2><p>กรอกรายละเอียดการเดินทาง เจ้าหน้าที่จะอนุมัติและจัดพนักงานขับรถให้</p></div></div>
+      <div class="two">
+        <div class="panel">
+          <form id="bookForm" novalidate>
+            <div><div class="small muted" style="margin-bottom:8px;font-weight:500">เลือกรถ</div><div class="vpick" id="vpick"></div></div>
+            <div class="row"><label>วันที่ออกเดินทาง<input type="date" id="f-sdate"></label><label>เวลาออก<input type="time" id="f-stime" step="900"></label></div>
+            <div class="row"><label>วันที่กลับ<input type="date" id="f-edate"></label><label>เวลากลับ<input type="time" id="f-etime" step="900"></label></div>
+            <div id="avail" class="check" hidden></div>
+            <div class="row"><label>ชื่อผู้ขอใช้รถ<input id="f-name" autocomplete="name"></label><label>ฝ่าย / แผนก<input id="f-dept"></label></div>
+            <div class="row"><label>เบอร์ติดต่อ<input id="f-phone" type="tel" autocomplete="tel"></label><label>จำนวนผู้โดยสาร<input id="f-pax" type="number" min="1" max="60" value="1"></label></div>
+            <div class="row"><label>วัตถุประสงค์<select id="f-purpose"></select></label><label>สถานที่ไป<input id="f-dest" placeholder="เช่น ศาลากลางจังหวัด"></label></div>
+            <label>รายละเอียดเพิ่มเติม (ถ้ามี)<textarea id="f-note" placeholder="เช่น ขนอุปกรณ์ประชุม 2 กล่อง, รับที่หน้าอาคาร 2"></textarea></label>
+            <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap"><button class="btn primary" type="submit" id="submitBtn">ส่งคำขอจองรถ</button><span class="small muted" id="formMsg"></span></div>
+          </form>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h2 id="queueTitle">คิวรถ</h2></div>
+          <div class="list" id="queueList"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="view" id="v-mine" hidden>
+      <div class="pagehead"><div><h2>รายการจองของฉัน</h2><p id="myCount">คำขอที่ส่งจากบัญชีนี้</p></div><button class="btn primary" data-go="book">+ จองรถใหม่</button></div>
+      <div class="list" id="myList"></div>
+    </section>
+
+    <section class="view" id="v-cars" hidden>
+      <div class="pagehead"><div><h2>ข้อมูลรถ</h2><p>สถานะและคิวงานของรถแต่ละคัน</p></div></div>
+      <div class="carcards" id="carCards"></div>
+      <div class="panel admin-only" hidden style="margin-top:20px;max-width:640px">
+        <div class="panel-head"><h2>เพิ่มรถ</h2></div>
+        <form id="carForm">
+          <div class="row"><label>ประเภท<select id="c-kind"><option value="van">รถตู้</option><option value="pickup">รถกระบะ</option><option value="sedan">รถเก๋ง</option></select></label><label>ชื่อที่แสดง<input id="c-name" placeholder="เช่น รถตู้คันที่ 2"></label></div>
+          <div class="row"><label>ทะเบียน<input id="c-plate" placeholder="เช่น นข-1234"></label><label>จำนวนที่นั่ง<input id="c-seats" type="number" min="1" max="60" value="4"></label></div>
+          <div><button class="btn primary" type="submit">เพิ่มรถ</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="view" id="v-report" hidden>
+      <div class="pagehead"><div><h2>รายงานการใช้งาน</h2><p>นับเฉพาะการจองที่อนุมัติแล้ว</p></div>
+        <div style="display:flex;gap:8px;align-items:center"><button class="iconbtn" id="rPrev" aria-label="เดือนก่อน"><svg class="i"><use href="#ic-left"/></svg></button><h3 id="rTitle" style="min-width:130px;text-align:center"></h3><button class="iconbtn" id="rNext" aria-label="เดือนถัดไป"><svg class="i"><use href="#ic-right"/></svg></button></div></div>
+      <div class="kpis" id="rKpis"></div>
+      <div class="two">
+        <div class="panel"><div class="panel-head"><h2>ชั่วโมงใช้งานรายคัน</h2></div><div class="bars" id="rBars"></div></div>
+        <div class="panel"><div class="panel-head"><h2>แยกตามฝ่าย</h2></div><div class="scroll"><table class="tbl"><thead><tr><th>ฝ่าย / แผนก</th><th style="text-align:right">ครั้ง</th><th style="text-align:right">ชั่วโมง</th></tr></thead><tbody id="rDept"></tbody></table></div></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-prefs" hidden>
+      <div class="pagehead"><div><h2>ตั้งค่า</h2><p>ข้อมูลนี้ใช้กรอกแบบฟอร์มจองให้อัตโนมัติ</p></div></div>
+      <div class="panel" style="max-width:560px">
+        <form id="prefForm">
+          <label>อีเมล<input id="p-email" disabled></label>
+          <label>ชื่อ-นามสกุล<input id="p-name"></label>
+          <label>ฝ่าย / แผนก<input id="p-dept"></label>
+          <label>เบอร์ติดต่อ<input id="p-phone" type="tel"></label>
+          <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" type="submit">บันทึก</button><button class="btn danger" type="button" id="logout"><svg class="i"><use href="#ic-out"/></svg>ออกจากระบบ</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section class="view" id="v-admin" hidden>
+      <div class="pagehead"><div><h2>จัดการคำขอ</h2><p>อนุมัติคำขอและจัดพนักงานขับรถลงงาน</p></div></div>
+      <div class="kpis" id="aKpis"></div>
+      <div class="chips-f" id="jobFilter">
+        <button data-f="pending" aria-pressed="true">รออนุมัติ</button>
+        <button data-f="nodriver" aria-pressed="false">ยังไม่มีคนขับ</button>
+        <button data-f="upcoming" aria-pressed="false">งานที่จะถึง</button>
+        <button data-f="all" aria-pressed="false">ทั้งหมด</button>
+      </div>
+      <div class="list" id="adminList"></div>
+    </section>
+
+    <section class="view" id="v-drivers" hidden>
+      <div class="pagehead"><div><h2>พนักงานขับรถ</h2><p>รายชื่อที่ใช้จัดลงงาน</p></div></div>
+      <div class="two">
+        <div class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>ชื่อ</th><th>เบอร์โทร</th><th>LINE</th><th style="text-align:right">งานที่จะถึง</th><th></th></tr></thead><tbody id="driverRows"></tbody></table></div></div>
+        <div class="panel"><div class="panel-head"><h2>เพิ่มพนักงานขับรถ</h2></div>
+          <form id="driverForm"><label>ชื่อ-นามสกุล<input id="d-name"></label><label>เบอร์โทร<input id="d-phone" type="tel"></label><label>LINE ID (ไว้เชื่อมแชทบอท)<input id="d-line"></label><div><button class="btn primary" type="submit">เพิ่มรายชื่อ</button></div></form></div>
+      </div>
+    </section>
+
+    <section class="view" id="v-users" hidden>
+      <div class="pagehead"><div><h2>ผู้ใช้งาน</h2><p>กำหนดว่าใครเป็นผู้ดูแลระบบ</p></div></div>
+      <div class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>ชื่อ</th><th>ฝ่าย</th><th>อีเมล</th><th>สิทธิ์</th><th></th></tr></thead><tbody id="userRows"></tbody></table></div></div>
+    </section>
+
+    <section class="view" id="v-line" hidden>
+      <div class="pagehead"><div><h2>แจ้งงานกลุ่ม LINE</h2><p>สรุปงานพร้อมส่งให้พนักงานขับรถ</p></div></div>
+      <div class="two">
+        <div class="panel">
+          <div class="panel-head"><h3>ข้อความสรุปงาน</h3><select id="lineDay" style="width:auto"><option value="1">งานพรุ่งนี้</option><option value="0">งานวันนี้</option><option value="7">งาน 7 วันข้างหน้า</option></select></div>
+          <pre class="msg" id="lineMsg"></pre>
+          <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap;align-items:center"><button class="btn primary" id="copyLine">คัดลอกข้อความ</button><span class="small muted">วางในกลุ่ม LINE พนักงานขับรถได้ทันที</span></div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>แผนเชื่อมแชทบอท LINE</h3></div>
+          <ol class="steps">
+            <li>สร้าง LINE Official Account ของหน่วยงาน และเปิดใช้ Messaging API</li>
+            <li>เชิญบอทเข้ากลุ่มพนักงานขับรถ เพื่อเก็บ Group ID</li>
+            <li>สร้าง Supabase Edge Function ส่งสรุปงานวันถัดไปทุกเย็น ด้วยข้อความรูปแบบเดียวกับด้านซ้าย</li>
+            <li>ส่งแจ้งเตือนทันทีเมื่อจัดคนขับลงงานใหม่หรือมีการเปลี่ยนแปลง</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

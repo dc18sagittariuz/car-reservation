@@ -1,0 +1,35 @@
+name: Supabase keep-alive
+
+on:
+  schedule:
+    - cron: '0 1 */3 * *'   # ทุก 3 วัน เวลา 08:00 น. (เวลาไทย)
+  workflow_dispatch:         # กดทดสอบเองได้จากแท็บ Actions
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Query Supabase database
+        run: |
+          # อ่าน URL และ publishable key จาก config.js (เป็นค่าสาธารณะอยู่แล้ว)
+          SUPABASE_URL=$(grep -oP "SUPABASE_URL:\s*'\K[^']+" config.js)
+          SUPABASE_KEY=$(grep -oP "SUPABASE_KEY:\s*'\K[^']+" config.js)
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/rpc/keepalive" \
+            -H "apikey: $SUPABASE_KEY" \
+            -H "Content-Type: application/json" -d '{}'
+          echo
+
+      - name: Keep repository active (วันที่ 1 ของเดือน)
+        run: |
+          if [ "$(date +%d)" = "01" ]; then
+            date -u > .github/heartbeat.txt
+            git config user.name "keepalive-bot"
+            git config user.email "keepalive-bot@users.noreply.github.com"
+            git add .github/heartbeat.txt
+            git commit -m "chore: keep-alive [skip ci]" && git push
+          fi
