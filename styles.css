@@ -281,3 +281,10 @@ pre.msg{white-space:pre-wrap;background:var(--sunk);border:1px solid var(--line)
 .auth-msg.bad{color:var(--bad)} .auth-msg.ok{color:var(--ok)}
 .loading{padding:60px 16px;text-align:center;color:var(--muted)}
 .role-pill{font-size:.75rem;padding:2px 9px;border-radius:20px;background:var(--primary-soft);color:var(--primary);font-weight:600}
+
+/* ---------- cancel + notifications ---------- */
+.cancel-box input{flex:1;min-width:180px;padding:6px 10px}
+.notif{border:1px solid var(--line);border-radius:14px;padding:14px 16px;background:var(--surface);display:grid;gap:6px;position:relative;overflow:hidden}
+.notif.unread{border-color:var(--warn);background:linear-gradient(0deg,var(--surface),var(--surface)) padding-box}
+.notif.unread::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--warn)}
+.notif-top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}

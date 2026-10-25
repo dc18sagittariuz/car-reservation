@@ -6,7 +6,7 @@ const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
 const KIND = { van:'รถตู้', pickup:'รถกระบะ', sedan:'รถเก๋ง' };
 const ST = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
 const PURPOSES = ['ประชุม / สัมมนา','ติดต่อราชการ','ลงพื้นที่ / ตรวจงาน','อบรม / ศึกษาดูงาน','รับ-ส่งเอกสาร / พัสดุ','รับ-ส่งบุคคล','อื่น ๆ'];
-const S = { user:null, profile:null, isAdmin:false, vehicles:[], bookings:[], drivers:[], profiles:[],
+const S = { user:null, profile:null, isAdmin:false, vehicles:[], bookings:[], drivers:[], profiles:[], notifs:[], cancelOpen:null,
   mode:'month', cur:new Date(), filter:'pending', rMonth:null, view:'home', pickVeh:null, confirmDel:null, channel:null };
 
 /* ---------- helpers ---------- */
@@ -159,7 +159,7 @@ function renderHi(){
    DATA
    ===================================================================== */
 const mapBooking = r => ({ id:r.id, vehicle:r.vehicle_id, start:toLocal(r.start_at), end:toLocal(r.end_at), requester:r.requester, dept:r.dept,
-  phone:r.phone, passengers:r.passengers, purpose:r.purpose, destination:r.destination, note:r.note, status:r.status, driverId:r.driver_id||'', by:r.created_by });
+  phone:r.phone, passengers:r.passengers, purpose:r.purpose, destination:r.destination, note:r.note, status:r.status, driverId:r.driver_id||'', by:r.created_by, cancelReason:r.cancel_reason||'', cancelledAt:r.cancelled_at });
 
 async function loadVehicles(){
   const { data, error } = await sb.from('vehicles').select('*').order('sort').order('created_at');
@@ -177,13 +177,18 @@ async function loadBookings(){
   if(!error) S.bookings=(data||[]).map(mapBooking);
   return error;
 }
+async function loadNotifs(){
+  if(!S.isAdmin) return;
+  const { data, error } = await sb.from('notifications').select('*').order('created_at',{ascending:false}).limit(100);
+  if(!error) S.notifs=data||[];
+}
 async function loadProfiles(){
   if(!S.isAdmin) return;
   const { data } = await sb.from('profiles').select('*').order('full_name');
   S.profiles=data||[];
 }
 async function loadAll(){
-  const errs=(await Promise.all([loadVehicles(),loadDrivers(),loadBookings(),loadProfiles()])).filter(Boolean);
+  const errs=(await Promise.all([loadVehicles(),loadDrivers(),loadBookings(),loadProfiles(),loadNotifs()])).filter(Boolean);
   const off=$('offline');
   if(errs.length){
     off.hidden=false;
@@ -201,6 +206,7 @@ function reload(table){
     if(table==='drivers') await loadDrivers();
     if(table==='vehicles') await loadVehicles();
     if(table==='profiles') await loadProfiles();
+    if(table==='notifications') await loadNotifs();
     renderAll();
   },250);
 }
@@ -210,6 +216,10 @@ function subscribe(){
     .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},()=>reload('bookings'))
     .on('postgres_changes',{event:'*',schema:'public',table:'drivers'},()=>reload('drivers'))
     .on('postgres_changes',{event:'*',schema:'public',table:'vehicles'},()=>reload('vehicles'))
+    .on('postgres_changes',{event:'*',schema:'public',table:'notifications'},p=>{
+      if(!S.isAdmin) return;
+      if(p.eventType==='INSERT' && p.new && p.new.message) toast('🔔 '+p.new.message);
+      reload('notifications'); })
     .subscribe();
 }
 // เผื่อ realtime หลุด: โหลดใหม่ทุก 2 นาที และเมื่อกลับมาที่แท็บ
@@ -219,8 +229,8 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && S.user
 /* =====================================================================
    NAVIGATION
    ===================================================================== */
-const VIEWS=['home','book','mine','cars','report','prefs','admin','drivers','users','line'];
-const ADMIN_VIEWS=['admin','drivers','users','line'];
+const VIEWS=['home','book','mine','cars','report','prefs','admin','notifs','drivers','users','line'];
+const ADMIN_VIEWS=['admin','notifs','drivers','users','line'];
 function go(v){
   if(ADMIN_VIEWS.includes(v) && !S.isAdmin) v='home';
   if(!VIEWS.includes(v)) v='home';
@@ -407,7 +417,15 @@ $('bookForm').addEventListener('submit', async e=>{
    ===================================================================== */
 function card(b,mode){
   const drv=driverName(b.driverId), kind=V(b.vehicle).kind; let actions='';
-  if(mode==='mine' && b.status==='pending') actions=`<div class="bk-actions"><button class="btn sm danger" data-act="cancel" data-id="${b.id}">ยกเลิกคำขอ</button></div>`;
+  const canCancel = b.status==='pending' || (b.status==='approved' && b.start>nowStr());
+  if(mode==='mine' && canCancel){
+    const label = b.status==='approved' ? 'ยกเลิกการจอง' : 'ยกเลิกคำขอ';
+    actions = S.cancelOpen===b.id
+      ? `<div class="bk-actions cancel-box"><input id="cr-${b.id}" maxlength="300" placeholder="เหตุผลที่ยกเลิก (ไม่บังคับ)" aria-label="เหตุผลที่ยกเลิก">
+          <button class="btn sm danger" data-act="cancel" data-id="${b.id}">ยืนยัน${label}</button><button class="btn sm" data-act="cancel-close" data-id="${b.id}">ไม่ยกเลิก</button></div>
+         ${b.status==='approved'?'<div class="small muted">ระบบจะยกเลิกทันที และแจ้งเตือนผู้ดูแลระบบให้อัตโนมัติ</div>':''}`
+      : `<div class="bk-actions"><button class="btn sm danger" data-act="cancel-open" data-id="${b.id}">${label}</button></div>`;
+  }
   if(mode==='admin'){
     const busy=new Set(S.bookings.filter(x=>x.id!==b.id&&x.status==='approved'&&x.driverId&&overlaps(x,b)).map(x=>x.driverId));
     const opts=`<option value="">— เลือกพนักงานขับรถ —</option>`+S.drivers.filter(d=>d.active||d.id===b.driverId).map(d=>`<option value="${d.id}" ${d.id===b.driverId?'selected':''} ${busy.has(d.id)&&d.id!==b.driverId?'disabled':''}>${esc(d.name)}${busy.has(d.id)?' (ติดงานอื่นช่วงนี้)':''}</option>`).join('');
@@ -424,7 +442,8 @@ function card(b,mode){
     <div class="when">${whenText(b)}</div>
     <dl><dt>ผู้ขอ</dt><dd>${esc(b.requester)} · ${esc(b.dept)}${mode==='admin'?` · ${esc(b.phone)}`:''}</dd>
       <dt>ภารกิจ</dt><dd>${esc(b.purpose)}${b.note?' – '+esc(b.note):''} (${+b.passengers||1} คน)</dd>
-      <dt>คนขับ</dt><dd>${drv?esc(drv):'<span class="muted">ยังไม่จัด</span>'}</dd></dl>${actions}</div>`;
+      <dt>คนขับ</dt><dd>${drv?esc(drv):'<span class="muted">ยังไม่จัด</span>'}</dd>
+      ${b.status==='cancelled'&&b.cancelReason?`<dt>เหตุผลยกเลิก</dt><dd>${esc(b.cancelReason)}</dd>`:''}</dl>${actions}</div>`;
 }
 function renderMine(){
   const mine=S.bookings.filter(b=>S.user&&b.by===S.user.id).sort((a,b)=>a.start<b.start?1:-1);
@@ -510,7 +529,22 @@ function renderAdmin(){
     <td>${p.role==='admin'?'<span class="role-pill">ผู้ดูแลระบบ</span>':'ผู้ใช้ทั่วไป'}</td>
     <td>${p.id===S.user.id?'<span class="small muted">คุณ</span>':`<button class="btn sm" data-act="role" data-id="${p.id}" data-role="${p.role==='admin'?'user':'admin'}">${p.role==='admin'?'ถอนสิทธิ์ผู้ดูแล':'ตั้งเป็นผู้ดูแล'}</button>`}</td></tr>`).join('')
     || '<tr><td colspan="5" class="muted">ยังไม่มีผู้ใช้</td></tr>';
-  renderLine();
+  renderLine(); renderNotifs();
+}
+function renderNotifs(){
+  if(!S.isAdmin) return;
+  const unread=S.notifs.filter(n=>!n.read_at).length;
+  $('notifBadge').hidden=!unread; $('notifBadge').textContent=unread;
+  $('readAll').disabled=!unread;
+  $('notifList').innerHTML = S.notifs.length ? S.notifs.map(n=>{
+    const bk=S.bookings.find(x=>x.id===n.booking_id);
+    const when=new Date(n.created_at).toLocaleString('th-TH',{day:'numeric',month:'short',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+    return `<div class="notif ${n.read_at?'':'unread'} ${bk?'v-'+V(bk.vehicle).kind:''}">
+      <div class="notif-top"><span class="pill st-cancelled">ยกเลิกการจอง</span><span class="small muted">${when} น.</span></div>
+      <div>${esc(n.message)}</div>
+      ${bk?`<div class="small muted">${esc(vName(bk.vehicle))} · ${whenText(bk)} · ไปที่ ${esc(bk.destination)}</div>`:''}
+      ${n.read_at?'':`<div><button class="btn sm" data-act="readnotif" data-id="${n.id}">อ่านแล้ว</button></div>`}
+    </div>`; }).join('') : '<div class="empty">ยังไม่มีการแจ้งเตือน เมื่อผู้จองยกเลิกการจองที่อนุมัติแล้ว จะแสดงที่นี่</div>';
 }
 function jobText(b,i){
   return `${i!=null?(i+1)+'. ':''}${vName(b.vehicle)}
@@ -542,7 +576,20 @@ document.addEventListener('click',async e=>{
   const b=e.target.closest('button[data-act]'); if(!b) return;
   const id=b.dataset.id, act=b.dataset.act, bk=S.bookings.find(x=>x.id===id);
   const upd=async (patch,ok)=>{ const { error }=await sb.from('bookings').update(patch).eq('id',id); if(error){ toast(errText(error)); return false; } toast(ok); reload('bookings'); return true; };
-  if(act==='cancel') return upd({status:'cancelled'},'ยกเลิกคำขอแล้ว');
+  if(act==='cancel-open'){ S.cancelOpen=id; renderMine(); const i=$('cr-'+id); if(i) i.focus(); return; }
+  if(act==='cancel-close'){ S.cancelOpen=null; renderMine(); return; }
+  if(act==='cancel'){
+    const reason=($('cr-'+id)||{}).value||''; const wasApproved=bk&&bk.status==='approved';
+    b.disabled=true;
+    const ok=await upd({status:'cancelled',cancel_reason:reason.trim()}, wasApproved?'ยกเลิกการจองแล้ว ระบบแจ้งผู้ดูแลระบบให้แล้ว':'ยกเลิกคำขอแล้ว');
+    if(ok) S.cancelOpen=null; else b.disabled=false;
+    return;
+  }
+  if(act==='readnotif'||act==='readall'){
+    const qb=sb.from('notifications').update({read_at:new Date().toISOString()});
+    const { error } = act==='readall' ? await qb.is('read_at',null) : await qb.eq('id',id);
+    if(error) return toast(errText(error)); reload('notifications'); return;
+  }
   if(act==='approve') return upd({status:'approved'}, bk&&bk.driverId?'อนุมัติแล้ว':'อนุมัติแล้ว อย่าลืมจัดคนขับ');
   if(act==='reject') return upd({status:'rejected'},'บันทึกว่าไม่อนุมัติแล้ว');
   if(act==='revoke') return upd({status:'cancelled'},'ยกเลิกงานแล้ว');

@@ -99,8 +99,16 @@ create table if not exists public.bookings (
   created_at  timestamptz not null default now(),
   decided_at  timestamptz,
   decided_by  uuid,
+  cancel_reason text not null default '',
+  cancelled_at  timestamptz,
+  cancelled_by  uuid,
   constraint end_after_start check (end_at > start_at)
 );
+
+-- คอลัมน์ที่เพิ่มภายหลัง (สำหรับฐานข้อมูลที่สร้างไว้แล้ว)
+alter table public.bookings add column if not exists cancel_reason text not null default '';
+alter table public.bookings add column if not exists cancelled_at  timestamptz;
+alter table public.bookings add column if not exists cancelled_by  uuid;
 
 -- กันจองรถคันเดียวกันซ้อนเวลา (นับทั้งรออนุมัติและอนุมัติแล้ว)
 do $$ begin
@@ -118,20 +126,33 @@ exception when duplicate_object or duplicate_table then null; end $$;
 
 create index if not exists bookings_start_idx on public.bookings (start_at);
 
--- ผู้ใช้ทั่วไปทำได้แค่ "ยกเลิกคำขอของตัวเองที่ยังรออนุมัติ"
+-- ผู้ใช้ทั่วไปทำได้แค่ "ยกเลิกการจองของตัวเอง"
+--   - รออนุมัติ: ยกเลิกได้ทุกเมื่อ
+--   - อนุมัติแล้ว: ยกเลิกได้ก่อนเวลาออกเดินทาง (ยกเลิกทันที และแจ้งเตือนผู้ดูแล)
 create or replace function public.guard_booking_update()
 returns trigger language plpgsql security definer set search_path = public as $$
+declare reason text := left(coalesce(new.cancel_reason,''), 300);
 begin
   if public.is_admin() then
     if new.status is distinct from old.status and new.status in ('approved','rejected') then
       new.decided_at := now(); new.decided_by := auth.uid();
     end if;
+    if new.status = 'cancelled' and old.status <> 'cancelled' then
+      new.cancelled_at := now(); new.cancelled_by := auth.uid();
+    end if;
     return new;
   end if;
-  if old.created_by = auth.uid() and old.status = 'pending' and new.status = 'cancelled' then
+  if old.created_by = auth.uid() and new.status = 'cancelled'
+     and (old.status = 'pending' or (old.status = 'approved' and old.start_at > now())) then
     new := old;
     new.status := 'cancelled';
+    new.cancel_reason := reason;
+    new.cancelled_at := now();
+    new.cancelled_by := auth.uid();
     return new;
+  end if;
+  if old.status = 'approved' and old.start_at <= now() then
+    raise exception 'ยกเลิกไม่ได้ เพราะถึงเวลาออกเดินทางแล้ว กรุณาติดต่อผู้ดูแลระบบ';
   end if;
   raise exception 'ไม่มีสิทธิ์แก้ไขการจองนี้';
 end $$;
@@ -168,13 +189,57 @@ create policy "bookings read"   on public.bookings for select to authenticated u
 create policy "bookings insert" on public.bookings for insert to authenticated
   with check (created_by = auth.uid() and (status = 'pending' or public.is_admin()) and (driver_id is null or public.is_admin()));
 create policy "bookings update" on public.bookings for update to authenticated
-  using (public.is_admin() or (created_by = auth.uid() and status = 'pending'))
+  using (public.is_admin() or (created_by = auth.uid() and status in ('pending','approved')))
   with check (public.is_admin() or created_by = auth.uid());
 create policy "bookings delete" on public.bookings for delete to authenticated using (public.is_admin());
+
+-- ---------- การแจ้งเตือนผู้ดูแลระบบ ----------
+create table if not exists public.notifications (
+  id         uuid primary key default gen_random_uuid(),
+  kind       text not null,
+  booking_id uuid references public.bookings(id) on delete cascade,
+  message    text not null default '',
+  actor      uuid,
+  created_at timestamptz not null default now(),
+  read_at    timestamptz
+);
+create index if not exists notifications_created_idx on public.notifications (created_at desc);
+alter table public.notifications enable row level security;
+drop policy if exists "notifications admin read"   on public.notifications;
+drop policy if exists "notifications admin update" on public.notifications;
+drop policy if exists "notifications admin delete" on public.notifications;
+create policy "notifications admin read"   on public.notifications for select to authenticated using (public.is_admin());
+create policy "notifications admin update" on public.notifications for update to authenticated using (public.is_admin()) with check (public.is_admin());
+create policy "notifications admin delete" on public.notifications for delete to authenticated using (public.is_admin());
+
+-- เมื่อผู้จองยกเลิกการจองที่อนุมัติแล้ว → สร้างการแจ้งเตือน
+create or replace function public.notify_booking_cancel()
+returns trigger language plpgsql security definer set search_path = public as $$
+declare v record; drv text;
+begin
+  if old.status = 'approved' and new.status = 'cancelled' and new.cancelled_by is not distinct from old.created_by then
+    select name, plate into v from public.vehicles where id = new.vehicle_id;
+    select name into drv from public.drivers where id = old.driver_id;
+    insert into public.notifications (kind, booking_id, actor, message) values (
+      'booking_cancelled', new.id, new.cancelled_by,
+      format('%s ยกเลิกการจอง%s%s วันที่ %s น.%s%s',
+        new.requester, coalesce(v.name,'รถ'), case when coalesce(v.plate,'') <> '' then ' ('||v.plate||')' else '' end,
+        to_char(new.start_at at time zone 'Asia/Bangkok', 'DD/MM/YYYY HH24:MI'),
+        case when drv is not null then ' · คนขับ: '||drv else '' end,
+        case when new.cancel_reason <> '' then ' · เหตุผล: '||new.cancel_reason else '' end));
+  end if;
+  return null;
+end $$;
+drop trigger if exists notify_booking_cancel on public.bookings;
+create trigger notify_booking_cancel after update on public.bookings
+  for each row execute function public.notify_booking_cancel();
 
 -- ---------- Realtime (ให้ทุกหน้าจออัปเดตทันที) ----------
 do $$ begin
   alter publication supabase_realtime add table public.bookings, public.drivers, public.vehicles;
+exception when duplicate_object or duplicate_table then null; end $$;
+do $$ begin
+  alter publication supabase_realtime add table public.notifications;
 exception when duplicate_object or duplicate_table then null; end $$;
 
 -- ---------- Keep-alive สำหรับ GitHub Actions ----------

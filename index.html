@@ -32,6 +32,7 @@
 </svg>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
   <symbol id="ic-users" viewBox="0 0 24 24"><circle cx="9" cy="8.5" r="3.2"/><path d="M3 19.5c.6-3.2 3-5 6-5s5.4 1.8 6 5"/><circle cx="17" cy="9.5" r="2.5"/><path d="M16.5 14.6c2.4.2 4 1.7 4.5 4.4"/></symbol>
+  <symbol id="ic-bell" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20.5a2 2 0 0 0 4 0"/></symbol>
   <symbol id="ic-out" viewBox="0 0 24 24"><path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M9 16l-4-4 4-4M5 12h10"/></symbol>
 </defs></svg>
 
@@ -83,6 +84,7 @@
       <button class="navbtn" data-v="prefs"><svg class="i"><use href="#ic-gear"/></svg>ตั้งค่า</button>
       <div class="navgroup admin-only" hidden>ผู้ดูแลระบบ</div>
       <button class="navbtn admin-only" data-v="admin" hidden><svg class="i"><use href="#ic-inbox"/></svg>จัดการคำขอ<span class="badge" id="pendingBadge" hidden>0</span></button>
+      <button class="navbtn admin-only" data-v="notifs" hidden><svg class="i"><use href="#ic-bell"/></svg>การแจ้งเตือน<span class="badge" id="notifBadge" hidden>0</span></button>
       <button class="navbtn admin-only" data-v="drivers" hidden><svg class="i"><use href="#ic-driver"/></svg>พนักงานขับรถ</button>
       <button class="navbtn admin-only" data-v="users" hidden><svg class="i"><use href="#ic-users"/></svg>ผู้ใช้งาน</button>
       <button class="navbtn admin-only" data-v="line" hidden><svg class="i"><use href="#ic-chat"/></svg>แจ้งงานกลุ่ม LINE</button>
@@ -208,6 +210,11 @@
         <button data-f="all" aria-pressed="false">ทั้งหมด</button>
       </div>
       <div class="list" id="adminList"></div>
+    </section>
+
+    <section class="view" id="v-notifs" hidden>
+      <div class="pagehead"><div><h2>การแจ้งเตือน</h2><p>การจองที่อนุมัติแล้วแต่ผู้จองยกเลิกเอง ระบบยกเลิกให้ทันที ไม่ต้องอนุมัติ</p></div><button class="btn" data-act="readall" id="readAll">อ่านแล้วทั้งหมด</button></div>
+      <div class="list" id="notifList"></div>
     </section>
 
     <section class="view" id="v-drivers" hidden>
