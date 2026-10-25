@@ -60,14 +60,20 @@
 <section class="auth" id="auth" hidden>
   <div class="panel">
     <div class="seg" id="authMode"><button data-m="in" aria-pressed="true">เข้าสู่ระบบ</button><button data-m="up" aria-pressed="false">สมัครใช้งาน</button></div>
+    <h2 id="authTitle" hidden style="margin-bottom:14px"></h2>
     <form id="authForm" novalidate>
       <div id="upFields" hidden style="display:grid;gap:14px">
         <label>ชื่อ-นามสกุล<input id="a-name" autocomplete="name"></label>
         <div class="row"><label>ฝ่าย / แผนก<input id="a-dept"></label><label>เบอร์ติดต่อ<input id="a-phone" type="tel" autocomplete="tel"></label></div>
       </div>
-      <label>อีเมล<input id="a-email" type="email" autocomplete="email"></label>
-      <label>รหัสผ่าน<input id="a-pass" type="password" autocomplete="current-password" minlength="6"></label>
+      <label id="emailRow">อีเมล<input id="a-email" type="email" autocomplete="email"></label>
+      <label id="passRow"><span id="passLbl">รหัสผ่าน</span><input id="a-pass" type="password" autocomplete="current-password" minlength="6"></label>
+      <label id="pass2Row" hidden>ยืนยันรหัสผ่านใหม่<input id="a-pass2" type="password" autocomplete="new-password"></label>
       <button class="btn primary big" type="submit" id="authBtn">เข้าสู่ระบบ</button>
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <button type="button" class="linkbtn" id="forgotBtn">ลืมรหัสผ่าน?</button>
+        <button type="button" class="linkbtn" id="backBtn" hidden>← กลับไปหน้าเข้าสู่ระบบ</button>
+      </div>
       <div class="auth-msg" id="authMsg"></div>
     </form>
   </div>
@@ -87,7 +93,7 @@
       <button class="navbtn admin-only" data-v="notifs" hidden><svg class="i"><use href="#ic-bell"/></svg>การแจ้งเตือน<span class="badge" id="notifBadge" hidden>0</span></button>
       <button class="navbtn admin-only" data-v="drivers" hidden><svg class="i"><use href="#ic-driver"/></svg>พนักงานขับรถ</button>
       <button class="navbtn admin-only" data-v="users" hidden><svg class="i"><use href="#ic-users"/></svg>ผู้ใช้งาน</button>
-      <button class="navbtn admin-only" data-v="line" hidden><svg class="i"><use href="#ic-chat"/></svg>แจ้งงานกลุ่ม LINE</button>
+      <button class="navbtn super-only" data-v="line" hidden><svg class="i"><use href="#ic-chat"/></svg>แจ้งงานกลุ่ม LINE</button>
     </nav>
     <div class="leaf">
       <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M20 36V18" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M20 22C12 22 7 16 7 8c8 0 13 5 13 14z" fill="currentColor" opacity=".55"/><path d="M20 26c0-9 5-15 14-15 0 9-5 15-14 15z" fill="currentColor"/></svg>
@@ -198,6 +204,14 @@
           <div style="display:flex;gap:10px;flex-wrap:wrap"><button class="btn primary" type="submit">บันทึก</button><button class="btn danger" type="button" id="logout"><svg class="i"><use href="#ic-out"/></svg>ออกจากระบบ</button></div>
         </form>
       </div>
+      <div class="panel" style="max-width:560px;margin-top:20px">
+        <div class="panel-head"><h3>เปลี่ยนรหัสผ่าน</h3></div>
+        <form id="pwForm">
+          <label>รหัสผ่านใหม่<input id="p-pass" type="password" autocomplete="new-password" minlength="6"></label>
+          <label>ยืนยันรหัสผ่านใหม่<input id="p-pass2" type="password" autocomplete="new-password"></label>
+          <div><button class="btn primary" type="submit">เปลี่ยนรหัสผ่าน</button></div>
+        </form>
+      </div>
     </section>
 
     <section class="view" id="v-admin" hidden>
@@ -227,7 +241,7 @@
     </section>
 
     <section class="view" id="v-users" hidden>
-      <div class="pagehead"><div><h2>ผู้ใช้งาน</h2><p>กำหนดว่าใครเป็นผู้ดูแลระบบ</p></div></div>
+      <div class="pagehead"><div><h2>ผู้ใช้งาน</h2><p>รหัสผ่านเก็บแบบเข้ารหัสทางเดียว จึงไม่มีใครดูรหัสเดิมได้ แต่ผู้ดูแลตั้งรหัสใหม่ให้ได้ · Admin ตั้งรหัสให้ผู้ใช้ทั่วไป · Super Admin ตั้งรหัสและกำหนดสิทธิ์ได้ทุกคน</p></div></div>
       <div class="panel"><div class="scroll"><table class="tbl"><thead><tr><th>ชื่อ</th><th>ฝ่าย</th><th>อีเมล</th><th>สิทธิ์</th><th></th></tr></thead><tbody id="userRows"></tbody></table></div></div>
     </section>
 

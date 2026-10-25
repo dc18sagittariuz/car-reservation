@@ -37,9 +37,14 @@ Supabase Dashboard → **Authentication** → **URL Configuration**
 ### 3. ตั้งผู้ดูแลระบบคนแรก
 สมัครใช้งานผ่านหน้าเว็บก่อน แล้วรันใน SQL Editor:
 ```sql
-update public.profiles set role = 'admin' where email = 'อีเมลของคุณ';
+update public.profiles set role = 'superadmin' where email = 'อีเมลของคุณ';
 ```
 จากนั้นออกจากระบบแล้วเข้าใหม่ จะเห็นเมนูผู้ดูแลระบบ ผู้ดูแลคนต่อไปตั้งได้จากเมนู **ผู้ใช้งาน** ในหน้าเว็บ
+
+**สิทธิ์ในระบบ**
+- **ผู้ใช้ทั่วไป**: จองรถ ยกเลิกการจองของตัวเอง
+- **Admin**: อนุมัติ จัดคนขับ เพิ่ม/ลบคนขับ แก้ไข/ลบงาน จัดการรถ ตั้งรหัสผ่านใหม่ให้ผู้ใช้ทั่วไป
+- **Super Admin**: ทำได้ทุกอย่าง รวมถึงกำหนดสิทธิ์ผู้ใช้ และเชื่อมต่อ LINE
 
 ### 4. เปิด GitHub Pages
 Repo → **Settings → Pages** → Source: **Deploy from a branch** → Branch: `main` / `(root)` → Save

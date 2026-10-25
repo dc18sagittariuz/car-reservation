@@ -310,3 +310,12 @@ pre.msg{white-space:pre-wrap;background:var(--sunk);border:1px solid var(--line)
 .st-sending{background:var(--warn-soft);color:var(--warn)}
 .st-failed{background:var(--bad-soft);color:var(--bad)}
 .st-skipped{background:var(--sunk);color:var(--muted)}
+
+/* ---------- roles / edit / password ---------- */
+.linkbtn{background:none;border:0;padding:4px 0;color:var(--primary);cursor:pointer;font-size:.92rem}
+.linkbtn:hover{text-decoration:underline}
+.edit-box{display:grid;gap:12px;padding-top:12px;border-top:1px dashed var(--line);margin-top:4px}
+.pw-box{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.pw-box input{width:auto;flex:1;min-width:150px;padding:5px 9px}
+.pw-new{margin-top:6px;font-size:.88rem}
+.pw-new code{background:var(--ok-soft);color:var(--ok);padding:2px 8px;border-radius:6px;font-size:.95rem}

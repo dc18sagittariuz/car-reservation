@@ -181,7 +181,7 @@ async function status(req: Request) {
   const user = ur && ur.ok ? await ur.json() : null;
   if (!user?.id) return json({ error: "ต้องเข้าสู่ระบบ" }, 401);
   const p = await selectOne("profiles", `id=eq.${user.id}&select=role`);
-  if (p?.role !== "admin") return json({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
+  if (!["admin", "superadmin"].includes(p?.role)) return json({ error: "เฉพาะผู้ดูแลระบบ" }, 403);
 
   const out: Record<string, unknown> = { tokenSet: !!TOKEN, secretSet: !!SECRET };
   if (!TOKEN) return json(out);

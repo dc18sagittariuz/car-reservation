@@ -4,9 +4,10 @@ const CFG = window.APP_CONFIG || {};
 const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_KEY);
 
 const KIND = { van:'รถตู้', pickup:'รถกระบะ', sedan:'รถเก๋ง' };
+const ROLE = { user:'ผู้ใช้ทั่วไป', admin:'Admin', superadmin:'Super Admin' };
 const ST = { pending:'รออนุมัติ', approved:'อนุมัติแล้ว', rejected:'ไม่อนุมัติ', cancelled:'ยกเลิก' };
 const PURPOSES = ['ประชุม / สัมมนา','ติดต่อราชการ','ลงพื้นที่ / ตรวจงาน','อบรม / ศึกษาดูงาน','รับ-ส่งเอกสาร / พัสดุ','รับ-ส่งบุคคล','อื่น ๆ'];
-const S = { user:null, profile:null, isAdmin:false, vehicles:[], bookings:[], drivers:[], profiles:[], notifs:[], cancelOpen:null, line:{settings:null, outbox:[], status:null, code:null, codeExp:0, missing:false, dirty:false},
+const S = { user:null, profile:null, isAdmin:false, isSuper:false, editId:null, pwOpen:null, pwShown:{}, recovering:false, vehicles:[], bookings:[], drivers:[], profiles:[], notifs:[], cancelOpen:null, line:{settings:null, outbox:[], status:null, code:null, codeExp:0, missing:false, dirty:false},
   mode:'month', cur:new Date(), filter:'pending', rMonth:null, view:'home', pickVeh:null, confirmDel:null, channel:null };
 
 /* ---------- helpers ---------- */
@@ -39,6 +40,7 @@ function errText(e){
   if (/no_vehicle_overlap/.test(m)) return 'รถคันนี้มีคนจองช่วงเวลานี้แล้ว';
   if (/no_driver_overlap/.test(m)) return 'พนักงานขับรถคนนี้มีงานอื่นที่ทับเวลานี้';
   if (/end_after_start/.test(m)) return 'เวลากลับต้องอยู่หลังเวลาออกเดินทาง';
+  if (/[\u0E00-\u0E7F]/.test(m) && e && e.code==='P0001') return m;
   if (e && e.code==='42501' || /row-level security|ไม่มีสิทธิ์/.test(m)) return 'บัญชีนี้ไม่มีสิทธิ์ทำรายการนี้';
   if (/foreign key|violates foreign/.test(m)) return 'ลบไม่ได้ เพราะมีการจองที่ใช้ข้อมูลนี้อยู่ ให้ตั้งเป็นงดใช้แทน';
   return m ? 'ทำรายการไม่สำเร็จ: '+m : 'ทำรายการไม่สำเร็จ ลองใหม่อีกครั้ง';
@@ -79,16 +81,52 @@ const art = (kind,cls='art') => `<svg class="${cls}" viewBox="0 0 120 56" aria-h
    AUTH
    ===================================================================== */
 let authMode='in';
-$('authMode').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; authMode=b.dataset.m;
-  $('authMode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b));
-  $('upFields').hidden = authMode!=='up';
-  $('authBtn').textContent = authMode==='up' ? 'สมัครใช้งาน' : 'เข้าสู่ระบบ';
-  $('a-pass').autocomplete = authMode==='up' ? 'new-password' : 'current-password';
-  $('authMsg').textContent=''; };
+function setAuthMode(m){
+  authMode=m;
+  $('authMode').hidden = m==='recover';
+  $('authMode').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x.dataset.m===m));
+  $('upFields').hidden = m!=='up';
+  $('emailRow').hidden = m==='recover';
+  $('passRow').hidden = m==='forgot';
+  $('pass2Row').hidden = m!=='recover';
+  $('forgotBtn').hidden = m!=='in';
+  $('backBtn').hidden = m!=='forgot';
+  $('authTitle').hidden = !(m==='forgot'||m==='recover');
+  $('authTitle').textContent = m==='forgot' ? 'ลืมรหัสผ่าน' : 'ตั้งรหัสผ่านใหม่';
+  $('passLbl').textContent = m==='recover' ? 'รหัสผ่านใหม่' : 'รหัสผ่าน';
+  $('authBtn').textContent = {in:'เข้าสู่ระบบ',up:'สมัครใช้งาน',forgot:'ส่งลิงก์ตั้งรหัสผ่านใหม่',recover:'บันทึกรหัสผ่านใหม่'}[m];
+  $('a-pass').autocomplete = (m==='up'||m==='recover') ? 'new-password' : 'current-password';
+  $('authMsg').textContent=''; $('authMsg').className='auth-msg';
+}
+$('authMode').onclick=e=>{ const b=e.target.closest('button'); if(b) setAuthMode(b.dataset.m); };
+$('forgotBtn').onclick=()=>setAuthMode('forgot');
+$('backBtn').onclick=()=>setAuthMode('in');
 $('authForm').addEventListener('submit', async e=>{
   e.preventDefault();
   const msg=$('authMsg'), email=$('a-email').value.trim(), password=$('a-pass').value;
   msg.className='auth-msg';
+  if(authMode==='forgot'){
+    if(!email){ msg.className='auth-msg bad'; msg.textContent='กรุณากรอกอีเมลที่ใช้สมัคร'; return; }
+    $('authBtn').disabled=true; msg.textContent='กำลังส่ง…';
+    const { error } = await sb.auth.resetPasswordForEmail(email, { redirectTo: location.origin+location.pathname });
+    $('authBtn').disabled=false;
+    if(error){ msg.className='auth-msg bad'; msg.textContent = /rate limit|seconds/i.test(error.message) ? 'ส่งอีเมลถี่เกินไป กรุณารอสักครู่แล้วลองใหม่ หรือติดต่อผู้ดูแลให้ตั้งรหัสใหม่ให้' : 'ส่งไม่สำเร็จ: '+error.message; return; }
+    msg.className='auth-msg ok'; msg.textContent='ถ้ามีบัญชีนี้ในระบบ จะได้รับอีเมลพร้อมลิงก์ตั้งรหัสผ่านใหม่ (ดูในกล่องจดหมายขยะด้วย)';
+    return;
+  }
+  if(authMode==='recover'){
+    if(password.length<6){ msg.className='auth-msg bad'; msg.textContent='รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'; return; }
+    if(password!==$('a-pass2').value){ msg.className='auth-msg bad'; msg.textContent='รหัสผ่านทั้งสองช่องไม่ตรงกัน'; return; }
+    $('authBtn').disabled=true;
+    const { error } = await sb.auth.updateUser({ password });
+    $('authBtn').disabled=false;
+    if(error){ msg.className='auth-msg bad'; msg.textContent='ไม่สำเร็จ: '+error.message; return; }
+    S.recovering=false; RECOVERY_URL=false; $('a-pass').value=''; $('a-pass2').value='';
+    try{ history.replaceState(null,'',location.pathname); }catch(e){}
+    toast('ตั้งรหัสผ่านใหม่แล้ว'); setAuthMode('in');
+    const { data:{ session } } = await sb.auth.getSession(); bootedFor=null; onSession(session);
+    return;
+  }
   if(!email || password.length<6){ msg.className='auth-msg bad'; msg.textContent='กรอกอีเมล และรหัสผ่านอย่างน้อย 6 ตัวอักษร'; return; }
   $('authBtn').disabled=true; msg.textContent='กำลังดำเนินการ…';
   try{
@@ -115,7 +153,9 @@ $('authForm').addEventListener('submit', async e=>{
 $('logout').onclick=async()=>{ await sb.auth.signOut(); };
 $('userchip').onclick=()=>go('prefs');
 
+let RECOVERY_URL = /type=recovery/.test(location.hash+location.search);
 sb.auth.onAuthStateChange((event, session)=>{
+  if(event==='PASSWORD_RECOVERY') S.recovering=true;
   setTimeout(()=>onSession(session), 0);   // หลีกเลี่ยงการเรียก Supabase ภายใน callback โดยตรง
 });
 
@@ -123,10 +163,13 @@ let bootedFor=null;
 async function onSession(session){
   $('boot').hidden=true;
   if(!session){
-    bootedFor=null; S.user=null; S.profile=null; S.isAdmin=false;
+    bootedFor=null; S.user=null; S.profile=null; S.isAdmin=false; S.isSuper=false;
     if(S.channel){ sb.removeChannel(S.channel); S.channel=null; }
     $('app').hidden=true; $('userchip').hidden=true; $('auth').hidden=false;
     return;
+  }
+  if(S.recovering || RECOVERY_URL){
+    $('app').hidden=true; $('userchip').hidden=true; $('auth').hidden=false; setAuthMode('recover'); return;
   }
   if(bootedFor===session.user.id) return;
   bootedFor=session.user.id;
@@ -141,8 +184,10 @@ async function onSession(session){
 async function loadProfile(){
   const { data } = await sb.from('profiles').select('*').eq('id', S.user.id).maybeSingle();
   S.profile = data || { id:S.user.id, email:S.user.email, full_name:'', dept:'', phone:'', role:'user' };
-  S.isAdmin = S.profile.role==='admin';
+  S.isAdmin = ['admin','superadmin'].includes(S.profile.role);
+  S.isSuper = S.profile.role==='superadmin';
   document.querySelectorAll('.admin-only').forEach(el=>el.hidden=!S.isAdmin);
+  document.querySelectorAll('.super-only').forEach(el=>el.hidden=!S.isSuper);
   const p=S.profile;
   $('p-email').value=p.email||S.user.email||''; $('p-name').value=p.full_name||''; $('p-dept').value=p.dept||''; $('p-phone').value=p.phone||'';
   if(!$('f-name').value) $('f-name').value=p.full_name||'';
@@ -152,7 +197,7 @@ async function loadProfile(){
 }
 function renderHi(){
   const p=S.profile||{};
-  $('hi').innerHTML = `สวัสดี, <b>${p.full_name?'คุณ'+esc(p.full_name):'ผู้ใช้งาน'}</b><span>${esc(p.dept || (S.isAdmin?'ผู้ดูแลระบบ':S.user?.email||''))}</span>`;
+  $('hi').innerHTML = `สวัสดี, <b>${p.full_name?'คุณ'+esc(p.full_name):'ผู้ใช้งาน'}</b><span>${esc(p.dept || S.user?.email || '')}${S.isAdmin?' · '+ROLE[p.role]:''}</span>`;
 }
 
 /* =====================================================================
@@ -183,7 +228,7 @@ async function loadNotifs(){
   if(!error) S.notifs=data||[];
 }
 async function loadLine(){
-  if(!S.isAdmin) return;
+  if(!S.isSuper) return;
   const prev=S.line.settings;
   const { data, error } = await sb.from('line_settings').select('*').eq('id',1).maybeSingle();
   S.line.missing = !!error || !data;
@@ -197,7 +242,7 @@ async function loadLine(){
   if(!o.error) S.line.outbox=o.data||[];
 }
 async function lineStatus(){
-  if(!S.isAdmin || S.line.missing) return;
+  if(!S.isSuper || S.line.missing) return;
   try{
     const { data:{ session } } = await sb.auth.getSession();
     const r = await fetch(CFG.SUPABASE_URL+'/functions/v1/line-bot', { method:'POST',
@@ -242,8 +287,8 @@ function subscribe(){
     .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},()=>reload('bookings'))
     .on('postgres_changes',{event:'*',schema:'public',table:'drivers'},()=>reload('drivers'))
     .on('postgres_changes',{event:'*',schema:'public',table:'vehicles'},()=>reload('vehicles'))
-    .on('postgres_changes',{event:'*',schema:'public',table:'line_outbox'},()=>{ if(S.isAdmin) reload('line'); })
-    .on('postgres_changes',{event:'*',schema:'public',table:'line_settings'},()=>{ if(S.isAdmin) reload('line'); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'line_outbox'},()=>{ if(S.isSuper) reload('line'); })
+    .on('postgres_changes',{event:'*',schema:'public',table:'line_settings'},()=>{ if(S.isSuper) reload('line'); })
     .on('postgres_changes',{event:'*',schema:'public',table:'notifications'},p=>{
       if(!S.isAdmin) return;
       if(p.eventType==='INSERT' && p.new && p.new.message) toast('🔔 '+p.new.message);
@@ -258,9 +303,11 @@ document.addEventListener('visibilitychange',()=>{ if(!document.hidden && S.user
    NAVIGATION
    ===================================================================== */
 const VIEWS=['home','book','mine','cars','report','prefs','admin','notifs','drivers','users','line'];
-const ADMIN_VIEWS=['admin','notifs','drivers','users','line'];
+const ADMIN_VIEWS=['admin','notifs','drivers','users'];
+const SUPER_VIEWS=['line'];
 function go(v){
   if(ADMIN_VIEWS.includes(v) && !S.isAdmin) v='home';
+  if(SUPER_VIEWS.includes(v) && !S.isSuper) v='home';
   if(!VIEWS.includes(v)) v='home';
   S.view=v;
   document.querySelectorAll('.navbtn').forEach(b=>{ if(b.dataset.v===v) b.setAttribute('aria-current','page'); else b.removeAttribute('aria-current'); });
@@ -268,7 +315,7 @@ function go(v){
   try{ history.replaceState(null,'','#'+v); }catch(e){}
   const nb=document.querySelector(`.navbtn[data-v="${v}"]`); if(nb && innerWidth<900) nb.scrollIntoView({block:'nearest',inline:'center'});
   window.scrollTo({top:0});
-  if(v==='line' && S.isAdmin){ S.line.dirty=false; renderLineAdmin(); lineStatus(); }
+  if(v==='line' && S.isSuper){ S.line.dirty=false; renderLineAdmin(); lineStatus(); }
 }
 $('nav').onclick=e=>{ const b=e.target.closest('.navbtn'); if(b) go(b.dataset.v); };
 document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if(g) go(g.dataset.go); });
@@ -464,7 +511,11 @@ function card(b,mode){
       ${b.status==='pending'?`<button class="btn sm good" data-act="approve" data-id="${b.id}">อนุมัติ</button><button class="btn sm danger" data-act="reject" data-id="${b.id}">ไม่อนุมัติ</button>`:''}
       ${b.status==='approved'?`<button class="btn sm" data-act="copy" data-id="${b.id}">คัดลอกข้อความแจ้งงาน</button><button class="btn sm danger" data-act="revoke" data-id="${b.id}">ยกเลิกงาน</button>`:''}
       ${closed?`<button class="btn sm" data-act="reopen" data-id="${b.id}">นำกลับมาพิจารณา</button>`:''}
+      <span style="flex:1"></span>
+      <button class="btn sm" data-act="edit-open" data-id="${b.id}">แก้ไข</button>
+      <button class="btn sm danger" data-act="delbk" data-id="${b.id}">${S.confirmDel==='del-'+b.id?'ยืนยันลบถาวร':'ลบ'}</button>
     </div>`;
+    if(S.editId===b.id) actions = editForm(b);
   }
   return `<div class="bk v-${kind}">
     <div class="bk-top"><div class="bk-title"><span class="vtag">${esc(vShort(b.vehicle))}</span>${esc(b.destination)}</div><span class="pill st-${b.status}">${ST[b.status]||esc(b.status)}</span></div>
@@ -473,6 +524,20 @@ function card(b,mode){
       <dt>ภารกิจ</dt><dd>${esc(b.purpose)}${b.note?' – '+esc(b.note):''} (${+b.passengers||1} คน)</dd>
       <dt>คนขับ</dt><dd>${drv?esc(drv):'<span class="muted">ยังไม่จัด</span>'}</dd>
       ${b.status==='cancelled'&&b.cancelReason?`<dt>เหตุผลยกเลิก</dt><dd>${esc(b.cancelReason)}</dd>`:''}</dl>${actions}</div>`;
+}
+function editForm(b){
+  const vopts=S.vehicles.map(v=>`<option value="${v.id}" ${v.id===b.vehicle?'selected':''}>${esc(vName(v.id))}${v.active?'':' (งดใช้)'}</option>`).join('');
+  const popts=[...new Set([...PURPOSES,b.purpose])].filter(Boolean).map(x=>`<option ${x===b.purpose?'selected':''}>${esc(x)}</option>`).join('');
+  return `<div class="edit-box">
+    <div class="row"><label>รถ<select id="e-veh">${vopts}</select></label><label>จำนวนผู้โดยสาร<input id="e-pax" type="number" min="1" max="60" value="${+b.passengers||1}"></label></div>
+    <div class="row"><label>วันที่ออก<input id="e-sd" type="date" value="${b.start.slice(0,10)}"></label><label>เวลาออก<input id="e-st" type="time" step="900" value="${tm(b.start)}"></label></div>
+    <div class="row"><label>วันที่กลับ<input id="e-ed" type="date" value="${b.end.slice(0,10)}"></label><label>เวลากลับ<input id="e-et" type="time" step="900" value="${tm(b.end)}"></label></div>
+    <div class="row"><label>ผู้ขอ<input id="e-req" value="${esc(b.requester)}"></label><label>ฝ่าย<input id="e-dept" value="${esc(b.dept)}"></label></div>
+    <div class="row"><label>เบอร์ติดต่อ<input id="e-phone" value="${esc(b.phone)}"></label><label>วัตถุประสงค์<select id="e-purpose">${popts}</select></label></div>
+    <label>สถานที่ไป<input id="e-dest" value="${esc(b.destination)}"></label>
+    <label>รายละเอียดเพิ่มเติม<textarea id="e-note">${esc(b.note)}</textarea></label>
+    <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm primary" data-act="edit-save" data-id="${b.id}">บันทึกการแก้ไข</button><button class="btn sm" data-act="edit-close" data-id="${b.id}">ยกเลิก</button></div>
+  </div>`;
 }
 function renderMine(){
   const mine=S.bookings.filter(b=>S.user&&b.by===S.user.id).sort((a,b)=>a.start<b.start?1:-1);
@@ -526,6 +591,14 @@ $('rPrev').onclick=()=>{ S.rMonth=new Date(S.rMonth.getFullYear(),S.rMonth.getMo
 $('rNext').onclick=()=>{ S.rMonth=new Date(S.rMonth.getFullYear(),S.rMonth.getMonth()+1,1); renderReport(); };
 
 /* ---------- prefs ---------- */
+$('pwForm').addEventListener('submit',async e=>{ e.preventDefault();
+  const a=$('p-pass').value, c=$('p-pass2').value;
+  if(a.length<6) return toast('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+  if(a!==c) return toast('รหัสผ่านทั้งสองช่องไม่ตรงกัน');
+  const { error } = await sb.auth.updateUser({ password:a });
+  if(error) return toast('เปลี่ยนรหัสผ่านไม่สำเร็จ: '+error.message);
+  $('p-pass').value=''; $('p-pass2').value=''; toast('เปลี่ยนรหัสผ่านแล้ว');
+});
 $('prefForm').addEventListener('submit',async e=>{ e.preventDefault();
   const p={full_name:$('p-name').value.trim(),dept:$('p-dept').value.trim(),phone:$('p-phone').value.trim()};
   const { error } = await sb.from('profiles').update(p).eq('id',S.user.id);
@@ -554,10 +627,19 @@ function renderAdmin(){
   $('driverRows').innerHTML=S.drivers.length?S.drivers.map(d=>`<tr><td>${esc(d.name)}</td><td>${esc(d.phone)||'—'}</td><td>${esc(d.line_id)||'—'}</td><td class="n">${upcoming.filter(b=>b.driverId===d.id).length}</td>
     <td><button class="btn sm danger" data-act="deldrv" data-id="${d.id}">${S.confirmDel===d.id?'ยืนยันลบ':'ลบ'}</button></td></tr>`).join('')
     :`<tr><td colspan="5"><div class="empty">ยังไม่มีรายชื่อ เพิ่มพนักงานขับรถคนแรกจากแบบฟอร์ม</div></td></tr>`;
-  $('userRows').innerHTML=S.profiles.map(p=>`<tr><td>${esc(p.full_name)||'—'}</td><td>${esc(p.dept)||'—'}</td><td>${esc(p.email)}</td>
-    <td>${p.role==='admin'?'<span class="role-pill">ผู้ดูแลระบบ</span>':'ผู้ใช้ทั่วไป'}</td>
-    <td>${p.id===S.user.id?'<span class="small muted">คุณ</span>':`<button class="btn sm" data-act="role" data-id="${p.id}" data-role="${p.role==='admin'?'user':'admin'}">${p.role==='admin'?'ถอนสิทธิ์ผู้ดูแล':'ตั้งเป็นผู้ดูแล'}</button>`}</td></tr>`).join('')
-    || '<tr><td colspan="5" class="muted">ยังไม่มีผู้ใช้</td></tr>';
+  $('userRows').innerHTML=S.profiles.map(p=>{
+    const me=p.id===S.user.id;
+    const roleCell = S.isSuper && !me
+      ? `<select data-act="setrole" data-id="${p.id}" aria-label="สิทธิ์" style="width:auto;padding:5px 8px">${Object.entries(ROLE).map(([k,l])=>`<option value="${k}" ${k===p.role?'selected':''}>${l}</option>`).join('')}</select>`
+      : (p.role==='user' ? 'ผู้ใช้ทั่วไป' : `<span class="role-pill">${ROLE[p.role]||p.role}</span>`);
+    const canPw = !me && (S.isSuper || p.role==='user');
+    let pw = me ? '<span class="small muted">คุณ (เปลี่ยนรหัสที่เมนูตั้งค่า)</span>' : !canPw ? '<span class="small muted">เฉพาะ Super Admin</span>'
+      : S.pwOpen===p.id
+        ? `<div class="pw-box"><input id="pw-${p.id}" placeholder="รหัสผ่านใหม่ อย่างน้อย 6 ตัว" autocomplete="off"><button class="btn sm" data-act="pw-gen" data-id="${p.id}">สุ่ม</button><button class="btn sm primary" data-act="pw-save" data-id="${p.id}">บันทึก</button><button class="btn sm" data-act="pw-close" data-id="${p.id}">ยกเลิก</button></div>`
+        : `<button class="btn sm" data-act="pw-open" data-id="${p.id}">ตั้งรหัสผ่านใหม่</button>`;
+    if(S.pwShown[p.id]) pw += `<div class="pw-new">รหัสใหม่: <code>${esc(S.pwShown[p.id])}</code> <button class="btn sm" data-act="copytext" data-text="${esc(S.pwShown[p.id])}">คัดลอก</button><span class="small muted"> แจ้งผู้ใช้ แล้วให้เปลี่ยนเองภายหลัง</span></div>`;
+    return `<tr><td>${esc(p.full_name)||'—'}</td><td>${esc(p.dept)||'—'}</td><td>${esc(p.email)}</td><td>${roleCell}</td><td>${pw}</td></tr>`;
+  }).join('') || '<tr><td colspan="5" class="muted">ยังไม่มีผู้ใช้</td></tr>';
   renderLine(); renderNotifs(); renderLineAdmin();
 }
 function renderNotifs(){
@@ -577,7 +659,7 @@ function renderNotifs(){
 }
 const LST={sent:'ส่งแล้ว',pending:'รอส่ง',sending:'กำลังส่ง',failed:'ส่งไม่สำเร็จ',skipped:'ไม่ได้ส่ง'};
 function renderLineAdmin(){
-  if(!S.isAdmin) return;
+  if(!S.isSuper) return;
   const L=S.line, st=L.status||{}, cfg=L.settings;
   const note=$('lineNotice');
   const problems=[];
@@ -719,12 +801,46 @@ document.addEventListener('click',async e=>{
     S.confirmDel=null; const { error }=await sb.from('vehicles').delete().eq('id',id);
     if(error) return toast(errText(error)); toast('ลบรถแล้ว'); reload('vehicles'); return;
   }
-  if(act==='role'){
-    const { error }=await sb.from('profiles').update({role:b.dataset.role}).eq('id',id);
-    if(error) return toast(errText(error)); toast('เปลี่ยนสิทธิ์แล้ว'); reload('profiles'); return;
+  if(act==='edit-open'){ S.editId=id; renderAdmin(); return; }
+  if(act==='edit-close'){ S.editId=null; renderAdmin(); return; }
+  if(act==='edit-save'){
+    const sd=$('e-sd').value, st=$('e-st').value, ed=$('e-ed').value, et=$('e-et').value;
+    if(!sd||!st||!ed||!et) return toast('กรุณากรอกวันและเวลาให้ครบ');
+    if(ed+'T'+et<=sd+'T'+st) return toast('เวลากลับต้องอยู่หลังเวลาออกเดินทาง');
+    if(!$('e-req').value.trim()||!$('e-dest').value.trim()) return toast('กรุณากรอกผู้ขอและสถานที่ไป');
+    b.disabled=true;
+    const ok=await upd({ vehicle_id:$('e-veh').value, start_at:toISO(sd+'T'+st), end_at:toISO(ed+'T'+et),
+      requester:$('e-req').value.trim(), dept:$('e-dept').value.trim(), phone:$('e-phone').value.trim(),
+      passengers:Math.max(1,+$('e-pax').value||1), purpose:$('e-purpose').value, destination:$('e-dest').value.trim(), note:$('e-note').value.trim() }, 'บันทึกการแก้ไขแล้ว');
+    if(ok) S.editId=null; else b.disabled=false;
+    return;
+  }
+  if(act==='delbk'){
+    if(S.confirmDel!=='del-'+id) return armConfirm('del-'+id);
+    S.confirmDel=null; const { error }=await sb.from('bookings').delete().eq('id',id);
+    if(error) return toast(errText(error)); toast('ลบการจองแล้ว'); reload('bookings'); return;
+  }
+  if(act==='pw-open'){ S.pwOpen=id; renderAdmin(); const i=$('pw-'+id); if(i) i.focus(); return; }
+  if(act==='pw-close'){ S.pwOpen=null; renderAdmin(); return; }
+  if(act==='pw-gen'){
+    const cs='abcdefghjkmnpqrstuvwxyz23456789'; const a=new Uint32Array(8); crypto.getRandomValues(a);
+    $('pw-'+id).value=Array.from(a,x=>cs[x%cs.length]).join(''); return;
+  }
+  if(act==='pw-save'){
+    const pw=$('pw-'+id).value.trim();
+    if(pw.length<6) return toast('รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร');
+    const { error }=await sb.rpc('admin_set_password',{p_user:id,p_password:pw});
+    if(error) return toast(errText(error));
+    S.pwOpen=null; S.pwShown[id]=pw; toast('ตั้งรหัสผ่านใหม่แล้ว'); renderAdmin(); return;
   }
 });
 document.addEventListener('change',async e=>{
+  const r=e.target.closest('select[data-act="setrole"]');
+  if(r){
+    const { error }=await sb.from('profiles').update({role:r.value}).eq('id',r.dataset.id);
+    if(error){ toast(errText(error)); reload('profiles'); return; }
+    toast('เปลี่ยนสิทธิ์เป็น '+ROLE[r.value]+' แล้ว'); reload('profiles'); return;
+  }
   const s=e.target.closest('select[data-act="driver"]'); if(!s) return;
   const { error }=await sb.from('bookings').update({driver_id:s.value||null}).eq('id',s.dataset.id);
   if(error){ toast(errText(error)); reload('bookings'); return; }

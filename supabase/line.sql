@@ -44,8 +44,8 @@ alter table public.line_settings enable row level security;
 alter table public.line_outbox   enable row level security;
 drop policy if exists "line_settings admin read" on public.line_settings;
 drop policy if exists "line_outbox admin read"   on public.line_outbox;
-create policy "line_settings admin read" on public.line_settings for select to authenticated using (public.is_admin());
-create policy "line_outbox admin read"   on public.line_outbox   for select to authenticated using (public.is_admin());
+create policy "line_settings admin read" on public.line_settings for select to authenticated using (public.is_superadmin());
+create policy "line_outbox admin read"   on public.line_outbox   for select to authenticated using (public.is_superadmin());
 
 -- ---------- ข้อความภาษาไทย ----------
 create or replace function public.line_thdate(ts timestamptz, long boolean default false)
@@ -191,12 +191,12 @@ begin
   return found;
 end $$;
 
--- ---------- RPC สำหรับหน้าเว็บ (เฉพาะผู้ดูแล) ----------
+-- ---------- RPC สำหรับหน้าเว็บ (เฉพาะ Super Admin) ----------
 create or replace function public.line_new_pair_code()
 returns text language plpgsql security definer set search_path = public as $$
 declare c text := lpad((floor(random() * 1000000))::int::text, 6, '0');
 begin
-  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
   update public.line_settings set pair_code = c, pair_expires = now() + interval '30 minutes', updated_at = now() where id = 1;
   return c;
 end $$;
@@ -204,7 +204,7 @@ end $$;
 create or replace function public.line_unlink(p_kind text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
   if p_kind = 'drivers' then update public.line_settings set drivers_target = null, drivers_name = null where id = 1;
   else update public.line_settings set admin_target = null, admin_name = null where id = 1; end if;
 end $$;
@@ -214,7 +214,7 @@ create or replace function public.line_save_settings(
   p_notify_cancel_admin boolean, p_notify_new_request_admin boolean)
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
   update public.line_settings set daily_enabled = p_daily_enabled, daily_hour = p_daily_hour,
     notify_changes = p_notify_changes, notify_cancel_admin = p_notify_cancel_admin,
     notify_new_request_admin = p_notify_new_request_admin, updated_at = now()
@@ -226,7 +226,7 @@ end $$;
 create or replace function public.line_send_now(p_what text)
 returns void language plpgsql security definer set search_path = public as $$
 begin
-  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if not public.is_superadmin() then raise exception 'เฉพาะ Super Admin'; end if;
   if p_what = 'today'    then perform public.line_enqueue('drivers', public.line_daily_text_rel(0)); end if;
   if p_what = 'tomorrow' then perform public.line_enqueue('drivers', public.line_daily_text_rel(1)); end if;
   if p_what = 'test' then

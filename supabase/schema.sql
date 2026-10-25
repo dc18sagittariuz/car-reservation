@@ -13,7 +13,7 @@ create table if not exists public.profiles (
   full_name  text not null default '',
   dept       text not null default '',
   phone      text not null default '',
-  role       text not null default 'user' check (role in ('user','admin')),
+  role       text not null default 'user',
   created_at timestamptz not null default now()
 );
 
@@ -34,18 +34,31 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- สิทธิ์: user = ผู้ใช้ทั่วไป · admin = ผู้ดูแลงานทั่วไป · superadmin = ทำได้ทุกอย่าง (รวมเชื่อม LINE และกำหนดสิทธิ์)
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check check (role in ('user','admin','superadmin'));
+
 create or replace function public.is_admin()
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+  select exists (select 1 from public.profiles where id = auth.uid() and role in ('admin','superadmin'))
+$$;
+create or replace function public.is_superadmin()
+returns boolean language sql stable security definer set search_path = public as $$
+  select exists (select 1 from public.profiles where id = auth.uid() and role = 'superadmin')
 $$;
 
--- ผู้ใช้ทั่วไปเปลี่ยน role ตัวเองไม่ได้
+-- เปลี่ยนสิทธิ์ได้เฉพาะ Super Admin และต้องเหลือ Super Admin อย่างน้อย 1 คน
 create or replace function public.guard_profile_update()
 returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  -- auth.uid() ว่าง = รันจาก SQL Editor / ฝั่งเซิร์ฟเวอร์ (อนุญาต)
-  if new.role is distinct from old.role and auth.uid() is not null and not public.is_admin() then
-    raise exception 'เฉพาะผู้ดูแลระบบเท่านั้นที่เปลี่ยนสิทธิ์ได้';
+  if new.role is distinct from old.role then
+    -- auth.uid() ว่าง = รันจาก SQL Editor / ฝั่งเซิร์ฟเวอร์ (อนุญาต)
+    if auth.uid() is not null and not public.is_superadmin() then
+      raise exception 'เฉพาะ Super Admin เท่านั้นที่เปลี่ยนสิทธิ์ได้';
+    end if;
+    if old.role = 'superadmin' and (select count(*) from public.profiles where role = 'superadmin') <= 1 then
+      raise exception 'ต้องมี Super Admin อย่างน้อย 1 คน';
+    end if;
   end if;
   new.id := old.id; new.email := old.email;
   return new;
@@ -53,6 +66,34 @@ end $$;
 drop trigger if exists guard_profile_update on public.profiles;
 create trigger guard_profile_update before update on public.profiles
   for each row execute function public.guard_profile_update();
+
+-- ครั้งแรกที่อัปเกรด: ให้ผู้ดูแลคนแรกเป็น Super Admin
+update public.profiles set role = 'superadmin'
+ where id = (select id from public.profiles where role = 'admin' order by created_at limit 1)
+   and not exists (select 1 from public.profiles where role = 'superadmin');
+
+-- ผู้ดูแลตั้งรหัสผ่านใหม่ให้ผู้ใช้ (รหัสผ่านเดิมดูไม่ได้ เพราะเก็บแบบเข้ารหัสทางเดียว)
+--   admin ตั้งให้ผู้ใช้ทั่วไปได้ · superadmin ตั้งให้ทุกคนได้
+create extension if not exists pgcrypto with schema extensions;
+create or replace function public.admin_set_password(p_user uuid, p_password text)
+returns void language plpgsql security definer set search_path = public, extensions as $$
+declare target_role text;
+begin
+  if not public.is_admin() then raise exception 'เฉพาะผู้ดูแลระบบ'; end if;
+  if length(coalesce(p_password,'')) < 6 then raise exception 'รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร'; end if;
+  select role into target_role from public.profiles where id = p_user;
+  if target_role is null then raise exception 'ไม่พบผู้ใช้'; end if;
+  if target_role <> 'user' and not public.is_superadmin() then
+    raise exception 'ตั้งรหัสผ่านให้ผู้ดูแลคนอื่นได้เฉพาะ Super Admin';
+  end if;
+  update auth.users
+     set encrypted_password = crypt(p_password, gen_salt('bf')),
+         email_confirmed_at = coalesce(email_confirmed_at, now()),
+         updated_at = now()
+   where id = p_user;
+end $$;
+revoke all on function public.admin_set_password(uuid, text) from public, anon;
+grant execute on function public.admin_set_password(uuid, text) to authenticated;
 
 -- ---------- รถ ----------
 create table if not exists public.vehicles (
