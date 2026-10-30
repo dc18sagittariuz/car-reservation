@@ -114,16 +114,21 @@ returns text language sql stable security definer set search_path = public as $$
   select public.line_daily_text((now() at time zone 'Asia/Bangkok')::date + p_offset)
 $$;
 
--- สรุปงานรายสัปดาห์ (จันทร์–อาทิตย์) แบบกระชับ
+-- สรุปงานรายสัปดาห์ (จันทร์–อาทิตย์): แยกวันด้วยเส้นคั่น ข้อมูลงานละ 4 บรรทัด และเว้นบรรทัดระหว่างงาน
+-- เวลาเขียนแบบ 9.00 น. (ไม่ใช่ 09:00) เพื่อไม่ให้ LINE แปลงเป็นลิงก์
 create or replace function public.line_week_text(d_from date, p_title text default 'งานขับรถสัปดาห์')
 returns text language plpgsql stable security definer set search_path = public as $$
 declare
   ds timestamptz := (d_from::timestamp at time zone 'Asia/Bangkok');
   de timestamptz := ((d_from + 7)::timestamp at time zone 'Asia/Bangkok');
+  d_to date := d_from + 6;
+  mon text[] := array['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  dayn text[] := array['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
   r record; cur date; n int := 0; nodrv int := 0; body text := ''; day_d date;
+  ls timestamp; le timestamp; t_end text;
 begin
   for r in
-    select b.*, v.name as vname, v.plate as vplate, d.name as dname
+    select b.*, v.kind as vkind, v.name as vname, v.plate as vplate, d.name as dname
       from public.bookings b
       left join public.vehicles v on v.id = b.vehicle_id
       left join public.drivers  d on d.id = b.driver_id
@@ -132,22 +137,32 @@ begin
   loop
     n := n + 1;
     if r.driver_id is null then nodrv := nodrv + 1; end if;
-    day_d := greatest((r.start_at at time zone 'Asia/Bangkok')::date, d_from);
+    ls := r.start_at at time zone 'Asia/Bangkok';
+    le := r.end_at   at time zone 'Asia/Bangkok';
+    day_d := greatest(ls::date, d_from);
     if cur is distinct from day_d then
       cur := day_d;
-      body := body || E'\n\n▪️ ' || line_thdate(day_d::timestamp at time zone 'Asia/Bangkok');
+      body := body || E'\n\n━━━━━━━━━━\n🗓 ' || dayn[extract(dow from day_d)::int + 1] || ' '
+        || extract(day from day_d)::int || ' ' || mon[extract(month from day_d)::int];
     end if;
-    body := body || E'\n' || to_char(r.start_at at time zone 'Asia/Bangkok','HH24:MI') || '–'
-      || case when (r.end_at at time zone 'Asia/Bangkok')::date = (r.start_at at time zone 'Asia/Bangkok')::date
-              then to_char(r.end_at at time zone 'Asia/Bangkok','HH24:MI')
-              else line_thdate(r.end_at) || ' ' || to_char(r.end_at at time zone 'Asia/Bangkok','HH24:MI') end
-      || ' ' || coalesce(nullif(r.vplate,''), r.vname, 'รถ')
-      || E'\n   👤 ' || coalesce(r.dname, 'ยังไม่จัดคนขับ') || ' · 📍 ' || r.destination || ' · 🙋 ' || r.requester;
+    t_end := case when le::date = ls::date then to_char(le, 'FMHH24.MI') || ' น.'
+                  else to_char(le, 'FMHH24.MI') || ' น. (' || extract(day from le)::int || ' ' || mon[extract(month from le)::int] || ')' end;
+    body := body || E'\n\n'
+      || case r.vkind when 'van' then '🚐 ' when 'pickup' then '🛻 ' else '🚗 ' end
+      || coalesce(r.vname, 'รถ') || case when coalesce(r.vplate,'') <> '' then ' ' || r.vplate else '' end
+      || ' · ' || to_char(ls, 'FMHH24.MI') || '–' || t_end
+      || E'\n👤 ' || coalesce(r.dname, '⚠️ ยังไม่จัดคนขับ')
+      || E'\n📍 ' || r.destination
+      || E'\n🙋 ' || r.requester;
   end loop;
-  return '🗓️ ' || p_title || E'\n' || line_thdate(ds) || ' – ' || line_thdate(de - interval '1 second')
-    || ' ' || (extract(year from d_from)::int + 543)
-    || E'\n' || case when n = 0 then 'ไม่มีงาน'
-                     else 'รวม ' || n || ' งาน' || case when nodrv > 0 then ' (ยังไม่จัดคนขับ ' || nodrv || ' งาน)' else '' end || body end;
+  return '🗓️ ' || p_title || E'\n'
+    || extract(day from d_from)::int
+    || case when extract(month from d_from) = extract(month from d_to) then ''
+            else ' ' || mon[extract(month from d_from)::int] end
+    || '–' || extract(day from d_to)::int || ' ' || mon[extract(month from d_to)::int] || ' ' || (extract(year from d_to)::int + 543)
+    || ' · ' || case when n = 0 then 'ไม่มีงาน' else 'รวม ' || n || ' งาน' end
+    || case when nodrv > 0 then E'\n⚠️ ยังไม่จัดคนขับ ' || nodrv || ' งาน' else '' end
+    || body;
 end $$;
 
 -- p_weeks = 0 สัปดาห์นี้, 1 สัปดาห์หน้า
