@@ -197,9 +197,18 @@ returns void language sql security definer set search_path = public as $$
 $$;
 
 -- สรุปงานพรุ่งนี้ (เรียกโดย pg_cron ทุกวัน)
+-- ถ้าพรุ่งนี้เป็นเสาร์/อาทิตย์และไม่มีงาน จะไม่ส่งข้อความ (มีงานจริงยังส่งตามปกติ)
 create or replace function public.line_enqueue_daily()
 returns void language plpgsql security definer set search_path = public as $$
+declare t date := (now() at time zone 'Asia/Bangkok')::date + 1;
 begin
+  if extract(isodow from t) in (6, 7) and not exists (
+       select 1 from public.bookings
+        where status = 'approved'
+          and start_at < ((t + 1)::timestamp at time zone 'Asia/Bangkok')
+          and end_at   > (t::timestamp at time zone 'Asia/Bangkok')) then
+    return;
+  end if;
   if (select daily_enabled from public.line_settings where id = 1) then
     perform public.line_enqueue('drivers', public.line_daily_text_rel(1));
   end if;
