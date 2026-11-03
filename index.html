@@ -148,8 +148,8 @@
         <div class="panel">
           <form id="bookForm" novalidate>
             <div><div class="small muted" style="margin-bottom:8px;font-weight:500">เลือกรถ</div><div class="vpick" id="vpick"></div></div>
-            <div class="row"><label>วันที่ออกเดินทาง<input type="date" id="f-sdate"></label><label>เวลาออก<input type="time" id="f-stime" step="900"></label></div>
-            <div class="row"><label>วันที่กลับ<input type="date" id="f-edate"></label><label>เวลากลับ<input type="time" id="f-etime" step="900"></label></div>
+            <div class="row"><label>วันที่ออกเดินทาง<input type="date" id="f-sdate"></label><label>เวลาออก<select id="f-stime"></select></label></div>
+            <div class="row"><label>วันที่กลับ<input type="date" id="f-edate"></label><label>เวลากลับ<select id="f-etime"></select></label></div>
             <div id="avail" class="check" hidden></div>
             <div class="row"><label>ชื่อผู้ขอใช้รถ<input id="f-name" autocomplete="name"></label><label>ฝ่าย / แผนก<input id="f-dept"></label></div>
             <div class="row"><label>เบอร์ติดต่อ<input id="f-phone" type="tel" autocomplete="tel"></label><label>จำนวนผู้โดยสาร<input id="f-pax" type="number" min="1" max="60" value="1"></label></div>
@@ -302,5 +302,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
 <script src="config.js"></script>
 <script src="app.js"></script>
+<script src="thai-date.js"></script>
 </body>
 </html>

@@ -22,6 +22,8 @@ const parseD = s => { const [y,m,d]=s.slice(0,10).split('-').map(Number); return
 const addDays = (d,n) => { const x=new Date(d); x.setDate(x.getDate()+n); return x; };
 const thDate = (s,opt) => parseD(s).toLocaleDateString('th-TH', opt || {weekday:'short',day:'numeric',month:'short',year:'2-digit'});
 const tm = s => s.slice(11,16);
+/* ตัวเลือกเวลาแบบ 24 ชม. ทุก 15 นาที (00:00–23:45) */
+const timeOpts = sel => { const l=[]; for(let h=0;h<24;h++) for(let m=0;m<60;m+=15) l.push(pad(h)+':'+pad(m)); if(sel&&!l.includes(sel)){ l.push(sel); l.sort(); } return l.map(t=>`<option${t===sel?' selected':''}>${t}</option>`).join(''); };
 const mins = s => +s.slice(11,13)*60 + +s.slice(14,16);
 const whenText = b => b.start.slice(0,10)===b.end.slice(0,10)
   ? `${thDate(b.start)} · ${tm(b.start)}–${tm(b.end)} น.`
@@ -403,6 +405,7 @@ $('todayBtn').onclick=()=>{ S.cur=new Date(); renderCal(); };
   $('q-purpose').innerHTML=po; $('f-purpose').innerHTML=po;
   $('q-date').value=ymd(addDays(new Date(),1));
   const t=ymd(addDays(new Date(),1));
+  $('f-stime').innerHTML=timeOpts('08:00'); $('f-etime').innerHTML=timeOpts('17:00');
   $('f-sdate').value=t; $('f-edate').value=t; $('f-stime').value='08:00'; $('f-etime').value='17:00';
 })();
 $('quick').addEventListener('submit',e=>{
@@ -546,8 +549,8 @@ function editForm(b){
   const popts=[...new Set([...PURPOSES,b.purpose])].filter(Boolean).map(x=>`<option ${x===b.purpose?'selected':''}>${esc(x)}</option>`).join('');
   return `<div class="edit-box">
     <div class="row"><label>รถ<select id="e-veh">${vopts}</select></label><label>จำนวนผู้โดยสาร<input id="e-pax" type="number" min="1" max="60" value="${+b.passengers||1}"></label></div>
-    <div class="row"><label>วันที่ออก<input id="e-sd" type="date" value="${b.start.slice(0,10)}"></label><label>เวลาออก<input id="e-st" type="time" step="900" value="${tm(b.start)}"></label></div>
-    <div class="row"><label>วันที่กลับ<input id="e-ed" type="date" value="${b.end.slice(0,10)}"></label><label>เวลากลับ<input id="e-et" type="time" step="900" value="${tm(b.end)}"></label></div>
+    <div class="row"><label>วันที่ออก<input id="e-sd" type="date" value="${b.start.slice(0,10)}"></label><label>เวลาออก<select id="e-st">${timeOpts(tm(b.start))}</select></label></div>
+    <div class="row"><label>วันที่กลับ<input id="e-ed" type="date" value="${b.end.slice(0,10)}"></label><label>เวลากลับ<select id="e-et">${timeOpts(tm(b.end))}</select></label></div>
     <div class="row"><label>ผู้ขอ<input id="e-req" value="${esc(b.requester)}"></label><label>ฝ่าย<input id="e-dept" value="${esc(b.dept)}"></label></div>
     <div class="row"><label>เบอร์ติดต่อ<input id="e-phone" value="${esc(b.phone)}"></label><label>วัตถุประสงค์<select id="e-purpose">${popts}</select></label></div>
     <label>สถานที่ไป<input id="e-dest" value="${esc(b.destination)}"></label>
