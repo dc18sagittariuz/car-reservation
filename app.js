@@ -521,6 +521,8 @@ $('bookForm').addEventListener('submit', async e=>{
    หน้าต่างจองรถจากปฏิทิน
    ===================================================================== */
 const dlg=$('dayDlg');
+const ddNarrow=matchMedia('(max-width:620px)'); // มือถือ: ชื่อวันแบบย่อ เช่น อ. 10 พ.ย. 69
+ddNarrow.addEventListener('change',()=>{ if(dlg.open) renderDd(); });
 function ddDefaultTimes(k){
   if(k!==ymd(new Date())) return ['08:00','12:00'];
   const n=new Date(), m=n.getHours()*60+n.getMinutes();
@@ -553,7 +555,7 @@ function ddClashText(b){ return b.start.slice(0,10)===b.end.slice(0,10) ? `${tm(
 function renderDd(){
   if(!S.dd) return;
   const k=S.dd.date, s=ddSlot(), valid=s.end>s.start, past=valid&&s.start<nowStr();
-  $('dd-title').textContent=thDate(k,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  $('dd-title').textContent = ddNarrow.matches ? thDate(k) : thDate(k,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
   $('ddPrev').disabled = k<=ymd(new Date());
   dlg.querySelectorAll('.ddchip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.s===$('dd-st').value && c.dataset.e===$('dd-et').value));
   const warn = !valid ? 'เวลากลับต้องอยู่หลังเวลาออกเดินทาง' : past ? 'ช่วงเวลานี้ผ่านไปแล้ว กรุณาเลือกเวลาใหม่' : '';
