@@ -559,9 +559,18 @@ function editForm(b){
   </div>`;
 }
 function renderMine(){
-  const mine=S.bookings.filter(b=>S.user&&b.by===S.user.id).sort((a,b)=>a.start<b.start?1:-1);
+  const n=nowStr();
+  const mine=S.bookings.filter(b=>S.user&&b.by===S.user.id);
   $('myCount').textContent = mine.length?`ทั้งหมด ${mine.length} รายการ`:'คำขอที่ส่งจากบัญชีนี้';
-  $('myList').innerHTML = mine.length?mine.slice(0,60).map(b=>card(b,'mine')).join(''):`<div class="empty">ยังไม่มีการจอง กด "จองรถใหม่" เพื่อขอใช้รถคันแรก</div>`;
+  if(!mine.length){ $('myList').innerHTML=`<div class="empty">ยังไม่มีการจอง กด "จองรถใหม่" เพื่อขอใช้รถคันแรก</div>`; return; }
+  // กำลังจะถึง = ยังไม่ถึงเวลากลับ (รวมงานที่กำลังใช้รถอยู่) เรียงใกล้สุดก่อน
+  const up=mine.filter(b=>b.end>n).sort((a,b)=>a.start<b.start?-1:1);
+  // ผ่านไปแล้ว = เลยเวลากลับแล้ว เรียงล่าสุดก่อน
+  const past=mine.filter(b=>b.end<=n).sort((a,b)=>a.start<b.start?1:-1);
+  const group=(title,list,emptyMsg)=>`<div class="mgroup"><h3 class="mgroup-h">${title}<span class="mgroup-n">${list.length}</span></h3>
+    <div class="list">${list.length?list.slice(0,60).map(b=>card(b,'mine')).join(''):`<div class="empty">${emptyMsg}</div>`}</div></div>`;
+  $('myList').innerHTML = group('กำลังจะถึง',up,'ไม่มีการจองที่กำลังจะถึง')
+    + (past.length?group('ผ่านไปแล้ว',past,''):'');
 }
 function renderCars(){
   const n=nowStr();
