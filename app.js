@@ -341,6 +341,22 @@ document.addEventListener('click',e=>{ const g=e.target.closest('[data-go]'); if
 /* =====================================================================
    CALENDAR
    ===================================================================== */
+/* แถบเวลา 06:00–21:00 ของรถแต่ละคันในวันที่ k · sel = ช่วงที่กำลังเลือก (นาที) จะแสดงเป็นกรอบฟ้า */
+function dayLanes(k, sel){
+  const list=onDay(k), H0=6*60, H1=21*60, span=H1-H0;
+  let hours=''; for(let h=6;h<=21;h+=3) hours+=`<span style="left:${(h*60-H0)/span*100}%">${pad(h)}:00</span>`;
+  let win='';
+  if(sel){ const s=Math.max(sel.s,H0), e=Math.min(sel.e,H1); if(e>s) win=`<div class="selwin" style="left:${(s-H0)/span*100}%;width:${(e-s)/span*100}%"></div>`; }
+  const lanes=S.vehicles.map(v=>{
+    const blocks=list.filter(b=>b.vehicle===v.id).map(b=>{
+      let s=b.start.slice(0,10)<k?0:mins(b.start), e=b.end.slice(0,10)>k?1440:mins(b.end);
+      s=Math.max(s,H0); e=Math.min(e,H1); if(e<=s) return '';
+      return `<div class="blk ${b.status}" style="left:${(s-H0)/span*100}%;width:${(e-s)/span*100}%" title="${esc(b.requester+' · '+b.destination)}">${tm(b.start)} ${esc(b.requester)}</div>`;
+    }).join('');
+    return `<div class="lane v-${v.kind}"><div class="ln"><i></i>${esc(v.plate||v.name)}</div><div class="track">${blocks}${win}</div></div>`;
+  }).join('');
+  return `<div class="lanes"><div class="hours"><div></div><div>${hours}</div></div>${lanes}</div>`;
+}
 function onDay(k){ const s=k+'T00:00', e=k+'T23:59'; return S.bookings.filter(b=>active(b) && b.start<=e && b.end>s).sort((a,b)=>a.start<b.start?-1:1); }
 function renderCal(){
   const c=S.cur, today=ymd(new Date());
@@ -373,21 +389,15 @@ function renderCal(){
   } else {
     const k=ymd(c), list=onDay(k);
     $('calTitle').textContent = c.toLocaleDateString('th-TH',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
-    const H0=6*60, H1=21*60, span=H1-H0;
-    let hours=''; for(let h=6;h<=21;h+=3) hours+=`<span style="left:${(h*60-H0)/span*100}%">${pad(h)}:00</span>`;
-    const lanes=S.vehicles.map(v=>{
-      const blocks=list.filter(b=>b.vehicle===v.id).map(b=>{
-        let s=b.start.slice(0,10)<k?0:mins(b.start), e=b.end.slice(0,10)>k?1440:mins(b.end);
-        s=Math.max(s,H0); e=Math.min(e,H1); if(e<=s) return '';
-        return `<div class="blk ${b.status}" style="left:${(s-H0)/span*100}%;width:${(e-s)/span*100}%" title="${esc(b.requester+' · '+b.destination)}">${tm(b.start)} ${esc(b.requester)}</div>`;
-      }).join('');
-      return `<div class="lane v-${v.kind}"><div class="ln"><i></i>${esc(v.plate||v.name)}</div><div class="track">${blocks}</div></div>`;
-    }).join('');
-    $('calBody').innerHTML = `<div class="lanes"><div class="hours"><div></div><div>${hours}</div></div>${lanes}</div>
+    $('calBody').innerHTML = `${dayLanes(k)}
       <h3 style="margin:22px 0 12px">รายละเอียด ${list.length} รายการ</h3>
       <div class="list">${list.length?list.map(b=>card(b,'view')).join(''):'<div class="empty">ไม่มีการจองรถในวันนี้ รถทุกคันว่าง</div>'}</div>`;
   }
-  $('calBody').querySelectorAll('[data-day]').forEach(el=>el.onclick=()=>{ S.cur=parseD(el.dataset.day); S.mode='day'; renderCal(); });
+  // กดวัน: วันนี้หรืออนาคต → เปิดหน้าต่างจอง · วันที่ผ่านไปแล้ว → มุมมองรายวัน
+  $('calBody').querySelectorAll('[data-day]').forEach(el=>el.onclick=()=>{
+    const k=el.dataset.day;
+    if(k<ymd(new Date())){ S.cur=parseD(k); S.mode='day'; renderCal(); } else openDay(k);
+  });
   $('legend').innerHTML = S.vehicles.map(v=>`<span class="v-${v.kind}"><i></i>${esc(vName(v.id))}</span>`).join('') + `<span class="pend"><i></i>กรอบเส้น = รออนุมัติ</span>`;
 }
 $('calMode').onclick=e=>{ const b=e.target.closest('button'); if(!b) return; S.mode=b.dataset.m; renderCal(); };
@@ -505,6 +515,100 @@ $('bookForm').addEventListener('submit', async e=>{
   if(error){ msg.textContent=errText(error); return; }
   $('f-dest').value=''; $('f-note').value=''; $('f-pax').value=1; msg.textContent='';
   toast('ส่งคำขอแล้ว รอเจ้าหน้าที่อนุมัติ'); await loadBookings(); renderAll(); go('mine');
+});
+
+/* =====================================================================
+   หน้าต่างจองรถจากปฏิทิน
+   ===================================================================== */
+const dlg=$('dayDlg');
+function ddDefaultTimes(k){
+  if(k!==ymd(new Date())) return ['08:00','12:00'];
+  const n=new Date(), m=n.getHours()*60+n.getMinutes();
+  if(m<8*60) return ['08:00','12:00'];
+  if(m<13*60) return ['13:00','17:00'];
+  const s=Math.min(Math.ceil((m+15)/15)*15, 23*60), e=Math.min(s+120, 23*60+45);
+  const f=x=>pad(Math.floor(x/60))+':'+pad(x%60);
+  return [f(s),f(e)];
+}
+function ddWho(){
+  const nm=$('dd-name').value.trim(), dp=$('dd-dept').value.trim(), ph=$('dd-phone').value.trim(), pax=+$('dd-pax').value||1;
+  $('ddWhoTxt').innerHTML = `ผู้ขอ <b>${esc(nm||'—')}</b>${dp?' · '+esc(dp):''}${ph?' · '+esc(ph):''} · ผู้โดยสาร ${pax} คน`;
+}
+function openDay(k){
+  const p=S.profile||{}, [st,et]=ddDefaultTimes(k);
+  S.dd={date:k, pick:null};
+  $('dd-st').innerHTML=timeOpts(st); $('dd-et').innerHTML=timeOpts(et);
+  $('dd-purpose').innerHTML=$('f-purpose').innerHTML; $('dd-purpose').value='';
+  $('dd-dest').value=''; $('dd-note').value=''; $('dd-pax').value=1;
+  $('dd-name').value=p.full_name||''; $('dd-dept').value=p.dept||''; $('dd-phone').value=p.phone||'';
+  const missing=!p.full_name||!p.dept||!p.phone;
+  $('ddMore').hidden=!missing; $('ddWho').hidden=missing; ddWho();
+  $('ddMsg').textContent='';
+  renderDd();
+  if(!dlg.open) dlg.showModal();
+  $('dd-dest').blur(); dlg.querySelector('.dd-body').scrollTop=0;
+}
+function ddSlot(){ const k=S.dd.date; return {start:k+'T'+$('dd-st').value, end:k+'T'+$('dd-et').value}; }
+function ddClashText(b){ return b.start.slice(0,10)===b.end.slice(0,10) ? `${tm(b.start)}–${tm(b.end)} น.` : 'จองต่อเนื่องหลายวัน'; }
+function renderDd(){
+  if(!S.dd) return;
+  const k=S.dd.date, s=ddSlot(), valid=s.end>s.start, past=valid&&s.start<nowStr();
+  $('dd-title').textContent=thDate(k,{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  $('ddPrev').disabled = k<=ymd(new Date());
+  dlg.querySelectorAll('.ddchip').forEach(c=>c.setAttribute('aria-pressed', c.dataset.s===$('dd-st').value && c.dataset.e===$('dd-et').value));
+  const warn = !valid ? 'เวลากลับต้องอยู่หลังเวลาออกเดินทาง' : past ? 'ช่วงเวลานี้ผ่านไปแล้ว กรุณาเลือกเวลาใหม่' : '';
+  $('ddWarn').hidden=!warn; $('ddWarn').textContent=warn;
+  $('ddLanes').innerHTML = dayLanes(k, valid ? {s:mins(s.start), e:mins(s.end)} : null);
+  const info=S.vehicles.map(v=>{
+    const clash = valid ? S.bookings.find(b=>active(b)&&b.vehicle===v.id&&overlaps(b,s)) : null;
+    const free = v.active && valid && !past && !clash;
+    const status = !v.active ? 'งดใช้ชั่วคราว' : warn ? 'เลือกเวลาให้ถูกต้องก่อน'
+      : clash ? `ไม่ว่าง · ${clash.requester} จองไว้ ${ddClashText(clash)}` : `ว่างตลอดช่วง ${$('dd-st').value}–${$('dd-et').value} น.`;
+    return {v, free, status};
+  });
+  const free=info.filter(x=>x.free);
+  if(!free.some(x=>x.v.id===S.dd.pick)) S.dd.pick = free.length ? free[0].v.id : null;
+  $('ddFree').textContent = warn ? '' : `ว่าง ${free.length} จาก ${usable().length} คัน`;
+  $('ddCars').innerHTML = [...free, ...info.filter(x=>!x.free)].map(({v,free,status})=>{
+    const on=v.id===S.dd.pick;
+    return `<button type="button" class="ddcar v-${v.kind}${on?' on':''}" data-veh="${v.id}" aria-pressed="${on}" ${free?'':'disabled'}>
+      ${art(v.kind)}<span style="min-width:0"><b>${esc(vName(v.id))}</b> <span class="seats">· ${v.seats} ที่นั่ง</span><span class="st ${free?'ok':'bad'}">${esc(status)}</span></span><span class="radio"></span></button>`;
+  }).join('') || '<div class="empty">ยังไม่มีข้อมูลรถ</div>';
+  const pv=S.dd.pick?V(S.dd.pick):null;
+  $('ddSubmit').disabled=!pv;
+  $('ddSubmit').textContent = pv ? `ส่งคำขอจอง${pv.name}` : (warn ? 'ส่งคำขอจองรถ' : 'ไม่มีรถว่างในช่วงนี้');
+}
+$('ddCars').onclick=e=>{ const b=e.target.closest('[data-veh]'); if(!b||b.disabled) return; S.dd.pick=b.dataset.veh; renderDd(); };
+$('ddChips').onclick=e=>{ const c=e.target.closest('.ddchip'); if(!c) return; $('dd-st').value=c.dataset.s; $('dd-et').value=c.dataset.e; $('ddMsg').textContent=''; renderDd(); };
+['dd-st','dd-et'].forEach(id=>$(id).addEventListener('change',()=>{ $('ddMsg').textContent=''; renderDd(); }));
+['dd-name','dd-dept','dd-phone','dd-pax'].forEach(id=>$(id).addEventListener('input',ddWho));
+$('ddEdit').onclick=()=>{ $('ddMore').hidden=false; $('ddWho').hidden=true; $('dd-name').focus(); };
+$('ddPrev').onclick=()=>{ const k=ymd(addDays(parseD(S.dd.date),-1)); if(k<ymd(new Date())) return; S.dd.date=k; renderDd(); };
+$('ddNext').onclick=()=>{ S.dd.date=ymd(addDays(parseD(S.dd.date),1)); renderDd(); };
+$('ddClose').onclick=$('ddCancel').onclick=()=>dlg.close();
+dlg.addEventListener('click',e=>{ if(e.target===dlg) dlg.close(); });
+dlg.addEventListener('close',()=>{ S.dd=null; });
+$('ddDay').onclick=()=>{ const k=S.dd.date; dlg.close(); S.cur=parseD(k); S.mode='day'; renderCal(); };
+$('ddForm').addEventListener('submit', async e=>{
+  e.preventDefault(); const msg=$('ddMsg'), s=ddSlot(), vid=S.dd.pick;
+  if(!vid){ msg.textContent='กรุณาเลือกรถที่ว่าง'; return; }
+  if(!$('dd-purpose').value){ msg.textContent='กรุณาเลือกวัตถุประสงค์'; $('dd-purpose').focus(); return; }
+  if(!$('dd-dest').value.trim()){ msg.textContent='กรุณากรอกสถานที่ไป'; $('dd-dest').focus(); return; }
+  const req=['dd-name','dd-dept','dd-phone'].find(id=>!$(id).value.trim());
+  if(req){ $('ddMore').hidden=false; $('ddWho').hidden=true; msg.textContent='กรุณากรอกชื่อ ฝ่าย และเบอร์ติดต่อให้ครบ'; $(req).focus(); return; }
+  const pax=+$('dd-pax').value||1, v=V(vid);
+  if(pax>v.seats){ $('ddMore').hidden=false; $('ddWho').hidden=true; msg.textContent=`${v.name}รับได้ไม่เกิน ${v.seats} คน`; $('dd-pax').focus(); return; }
+  if(s.start<nowStr()||S.bookings.some(b=>active(b)&&b.vehicle===vid&&overlaps(b,s))){ msg.textContent='รถคันนี้ไม่ว่างแล้ว กรุณาเลือกใหม่'; renderDd(); return; }
+  $('ddSubmit').disabled=true; msg.textContent='กำลังส่ง…';
+  const { error } = await sb.from('bookings').insert({
+    vehicle_id:vid, start_at:toISO(s.start), end_at:toISO(s.end),
+    requester:$('dd-name').value.trim(), dept:$('dd-dept').value.trim(), phone:$('dd-phone').value.trim(),
+    passengers:pax, destination:$('dd-dest').value.trim(), purpose:$('dd-purpose').value, note:$('dd-note').value.trim(),
+    status:'pending', created_by:S.user.id });
+  $('ddSubmit').disabled=false;
+  if(error){ msg.textContent=errText(error); return; }
+  msg.textContent=''; dlg.close();
+  toast('ส่งคำขอแล้ว รอเจ้าหน้าที่อนุมัติ'); await loadBookings(); renderAll();
 });
 
 /* =====================================================================
@@ -909,7 +1013,7 @@ document.addEventListener('change',async e=>{
 });
 
 /* ---------- render ---------- */
-function renderAll(){ if(!S.user) return; renderCal(); renderFleet(); renderVPick(); renderMine(); renderCars(); renderReport(); renderAdmin(); }
+function renderAll(){ if(!S.user) return; renderCal(); renderFleet(); renderVPick(); renderMine(); renderCars(); renderReport(); renderAdmin(); if(dlg.open) renderDd(); }
 S.rMonth=new Date(new Date().getFullYear(),new Date().getMonth(),1);
 setInterval(()=>{ if(S.user) renderFleet(); },60000);
 })();

@@ -297,6 +297,58 @@
     </section>
   </main>
 </div>
+<!-- หน้าต่างจองรถ: เปิดเมื่อกดวันในปฏิทิน -->
+<dialog class="dlg" id="dayDlg" aria-labelledby="dd-title">
+  <form class="dd" id="ddForm" novalidate>
+    <header class="dd-head">
+      <button type="button" class="iconbtn" id="ddPrev" aria-label="วันก่อนหน้า"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <div class="dd-title"><span class="small muted">จองรถสำหรับ</span><h2 id="dd-title"></h2></div>
+      <button type="button" class="iconbtn" id="ddNext" aria-label="วันถัดไป"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button type="button" class="iconbtn plain" id="ddClose" aria-label="ปิด"><svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </header>
+    <div class="dd-body">
+      <div>
+        <h3>ช่วงเวลา</h3>
+        <div class="dd-times">
+          <div class="dd-chips" id="ddChips">
+            <button type="button" class="ddchip" data-s="08:00" data-e="12:00"><b>ช่วงเช้า</b><span>08:00–12:00</span></button>
+            <button type="button" class="ddchip" data-s="13:00" data-e="17:00"><b>ช่วงบ่าย</b><span>13:00–17:00</span></button>
+            <button type="button" class="ddchip" data-s="08:00" data-e="17:00"><b>ทั้งวัน</b><span>08:00–17:00</span></button>
+          </div>
+          <div class="dd-pick"><label>ออก<select id="dd-st"></select></label><label>ถึง<select id="dd-et"></select></label></div>
+        </div>
+        <div class="check bad" id="ddWarn" hidden style="margin-top:10px"></div>
+      </div>
+      <div class="dd-sched">
+        <div class="dd-sec-h"><h3>ตารางรถวันนี้</h3><span class="small muted">กรอบฟ้า = ช่วงที่คุณเลือก</span></div>
+        <div id="ddLanes"></div>
+      </div>
+      <div>
+        <div class="dd-sec-h"><h3>เลือกรถ</h3><span class="small" id="ddFree" style="color:var(--ok);font-weight:600"></span></div>
+        <div class="ddcars" id="ddCars"></div>
+      </div>
+      <div>
+        <h3>รายละเอียดการเดินทาง</h3>
+        <div style="display:grid;gap:12px">
+          <div class="row"><label>วัตถุประสงค์<select id="dd-purpose"></select></label><label>สถานที่ไป<input id="dd-dest" placeholder="เช่น ศาลากลางจังหวัด"></label></div>
+          <div class="ddwho" id="ddWho"><span id="ddWhoTxt" style="flex:1;min-width:0"></span><button type="button" class="linkbtn" id="ddEdit">แก้ไข</button></div>
+          <div id="ddMore" hidden style="display:grid;gap:12px">
+            <div class="row"><label>ชื่อผู้ขอใช้รถ<input id="dd-name" autocomplete="name"></label><label>ฝ่าย / แผนก<input id="dd-dept"></label></div>
+            <div class="row"><label>เบอร์ติดต่อ<input id="dd-phone" type="tel" autocomplete="tel"></label><label>จำนวนผู้โดยสาร<input id="dd-pax" type="number" min="1" max="60" value="1"></label></div>
+            <label>รายละเอียดเพิ่มเติม (ถ้ามี)<textarea id="dd-note" placeholder="เช่น ขนอุปกรณ์ประชุม 2 กล่อง, รับที่หน้าอาคาร 2"></textarea></label>
+          </div>
+        </div>
+      </div>
+    </div>
+    <footer class="dd-foot">
+      <button type="button" class="linkbtn" id="ddDay">ดูตารางทั้งวันในปฏิทิน</button>
+      <span class="small" id="ddMsg" style="color:var(--bad)"></span>
+      <span class="dd-sp"></span>
+      <button type="button" class="btn dd-cancel" id="ddCancel">ยกเลิก</button>
+      <button type="submit" class="btn primary dd-submit" id="ddSubmit">ส่งคำขอจองรถ</button>
+    </footer>
+  </form>
+</dialog>
 <div class="toast" id="toast" hidden></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.117.3/dist/umd/supabase.js"></script>
