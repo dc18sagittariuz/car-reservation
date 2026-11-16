@@ -311,3 +311,6 @@ grant execute on function public.keepalive() to anon, authenticated;
 -- ตั้งผู้ดูแลระบบคนแรก (สมัครผ่านหน้าเว็บก่อน แล้วรันบรรทัดนี้โดยแก้อีเมล):
 -- update public.profiles set role = 'admin' where email = 'you@example.com';
 -- =====================================================================
+
+-- ให้ API รู้จักฟังก์ชันใหม่ทันที
+notify pgrst, 'reload schema';
