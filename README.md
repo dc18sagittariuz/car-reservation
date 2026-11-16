@@ -44,7 +44,7 @@ update public.profiles set role = 'superadmin' where email = 'อีเมลข
 **สิทธิ์ในระบบ**
 - **ผู้ใช้ทั่วไป**: จองรถ ยกเลิกการจองของตัวเอง
 - **Admin**: อนุมัติ จัดคนขับ เพิ่ม/ลบคนขับ แก้ไข/ลบงาน จัดการรถ ตั้งรหัสผ่านใหม่ให้ผู้ใช้ทั่วไป
-- **Super Admin**: ทำได้ทุกอย่าง รวมถึงกำหนดสิทธิ์ผู้ใช้ และเชื่อมต่อ LINE
+- **Super Admin**: ทำได้ทุกอย่าง รวมถึงกำหนดสิทธิ์ผู้ใช้ ลบผู้ใช้ และเชื่อมต่อ LINE
 
 ### 4. เปิด GitHub Pages
 Repo → **Settings → Pages** → Source: **Deploy from a branch** → Branch: `main` / `(root)` → Save

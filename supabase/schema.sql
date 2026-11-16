@@ -95,6 +95,24 @@ end $$;
 revoke all on function public.admin_set_password(uuid, text) from public, anon;
 grant execute on function public.admin_set_password(uuid, text) to authenticated;
 
+-- Super Admin ลบผู้ใช้งาน (ลบบัญชีล็อกอินและโปรไฟล์)
+--   ประวัติการจองของผู้ใช้ยังอยู่ครบ เพียงไม่ผูกกับบัญชีแล้ว · ลบบัญชีตัวเองไม่ได้
+create or replace function public.admin_delete_user(p_user uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare target_role text;
+begin
+  if not public.is_superadmin() then raise exception 'ลบผู้ใช้ได้เฉพาะ Super Admin'; end if;
+  if p_user = auth.uid() then raise exception 'ลบบัญชีของตัวเองไม่ได้'; end if;
+  select role into target_role from public.profiles where id = p_user;
+  if target_role is null and not exists (select 1 from auth.users where id = p_user) then
+    raise exception 'ไม่พบผู้ใช้';
+  end if;
+  delete from auth.users where id = p_user;      -- profiles ลบตามอัตโนมัติ (on delete cascade)
+  delete from public.profiles where id = p_user; -- กันกรณีโปรไฟล์ค้าง
+end $$;
+revoke all on function public.admin_delete_user(uuid) from public, anon;
+grant execute on function public.admin_delete_user(uuid) to authenticated;
+
 -- ---------- รถ ----------
 create table if not exists public.vehicles (
   id         uuid primary key default gen_random_uuid(),

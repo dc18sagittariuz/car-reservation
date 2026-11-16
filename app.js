@@ -771,6 +771,7 @@ function renderAdmin(){
       : S.pwOpen===p.id
         ? `<div class="pw-box"><input id="pw-${p.id}" placeholder="รหัสผ่านใหม่ อย่างน้อย 6 ตัว" autocomplete="off"><button class="btn sm" data-act="pw-gen" data-id="${p.id}">สุ่ม</button><button class="btn sm primary" data-act="pw-save" data-id="${p.id}">บันทึก</button><button class="btn sm" data-act="pw-close" data-id="${p.id}">ยกเลิก</button></div>`
         : `<button class="btn sm" data-act="pw-open" data-id="${p.id}">ตั้งรหัสผ่านใหม่</button>`;
+    if(S.isSuper && !me) pw += ` <button class="btn sm danger" data-act="deluser" data-id="${p.id}">${S.confirmDel==='user-'+p.id?'ยืนยันลบผู้ใช้':'ลบผู้ใช้'}</button>`;
     if(S.pwShown[p.id]) pw += `<div class="pw-new">รหัสใหม่: <code>${esc(S.pwShown[p.id])}</code> <button class="btn sm" data-act="copytext" data-text="${esc(S.pwShown[p.id])}">คัดลอก</button><span class="small muted"> แจ้งผู้ใช้ แล้วให้เปลี่ยนเองภายหลัง</span></div>`;
     return `<tr><td>${esc(p.full_name)||'—'}</td><td>${esc(p.dept)||'—'}</td><td>${esc(p.email)}</td><td>${roleCell}</td><td>${pw}</td></tr>`;
   }).join('') || '<tr><td colspan="5" class="muted">ยังไม่มีผู้ใช้</td></tr>';
@@ -986,6 +987,13 @@ document.addEventListener('click',async e=>{
     if(S.confirmDel!=='del-'+id) return armConfirm('del-'+id);
     S.confirmDel=null; const { error }=await sb.from('bookings').delete().eq('id',id);
     if(error) return toast(errText(error)); toast('ลบการจองแล้ว'); reload('bookings'); return;
+  }
+  if(act==='deluser'){
+    if(S.confirmDel!=='user-'+id) return armConfirm('user-'+id);
+    S.confirmDel=null; const { error }=await sb.rpc('admin_delete_user',{p_user:id});
+    if(error) return toast(errText(error));
+    S.profiles=S.profiles.filter(x=>x.id!==id); delete S.pwShown[id];
+    toast('ลบผู้ใช้แล้ว (ประวัติการจองยังอยู่)'); reload('profiles'); return;
   }
   if(act==='pw-open'){ S.pwOpen=id; renderAdmin(); const i=$('pw-'+id); if(i) i.focus(); return; }
   if(act==='pw-close'){ S.pwOpen=null; renderAdmin(); return; }
